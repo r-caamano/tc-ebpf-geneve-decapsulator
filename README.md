@@ -17,3 +17,13 @@
   compile:
 
         clang -g -O2 -Wall -Wextra -target bpf -c -o redirect_udp.o redirect_udp.c
+  
+  attach:
+        
+        sudo tc qdisc add dev <interface name>  clsact
+
+        sudo tc filter add dev <interface name> ingress bpf da obj redirect_udp.o sec sk_udp_redirect
+
+  detach:
+
+        sudo tc qdisc del dev <interface name>  clsact
