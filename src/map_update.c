@@ -47,7 +47,7 @@ int main(int argc, char **argv){
 	0x0,//zero source address
         0x0100007f,//standard tproxy localhost 
         htons((unsigned short)strtol(argv[2],&endPtr,10)),//dst_port
-        htons((unsigned short)strtol(argv[3],&endPtr,10)),//dst_port
+        htons((unsigned short)strtol(argv[3],&endPtr,10)),//src_port
         htons(atoi(argv[4]))//tproxy_port
     };
     //Open BPF zt_tproxy_map map
