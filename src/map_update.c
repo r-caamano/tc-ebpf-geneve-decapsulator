@@ -17,14 +17,10 @@
   *   see <https://www.gnu.org/licenses/>.
 */
 
-#include <error.h>
 #include <errno.h>
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <linux/bpf.h>
 #include "syscall.h"
 #include <arpa/inet.h>
 
