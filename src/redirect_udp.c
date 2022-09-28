@@ -1,3 +1,21 @@
+/*    Copyright (C) 2022  Robert Caamano   */
+ /*
+  *   This program redirects udp packets that match specific destination prefixes & src/dst ports
+  *   to either openziti edge-router tproxy port or to a locally hosted openziti service socket
+  *   depending on whether there is an existing egress socket. 
+  *
+  *   This program is free software: you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+  *   the Free Software Foundation, either version 3 of the License, or
+  *   (at your option) any later version.
+
+  *   This program is distributed in the hope that it will be useful,
+  *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *   GNU General Public License for more details.
+  *   see <https://www.gnu.org/licenses/>.
+*/
+
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
 #include <linux/in.h>
@@ -6,8 +24,40 @@
 #include <bcc/bcc_common.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
+#include <iproute2/bpf_elf.h>
 
+struct tproxy_tuple {
+                   __u32 dst_ip;
+		   __u32 src_ip;
+		   __u32 tproxy_ip;
+		   __u16 dst_port;
+		   __u16 src_port;
+		   __u16 tproxy_port;
+           };
 
+#define BPF_MAP_ID_TPROXY  1
+#define BPF_MAX_ENTRIES    100
+
+//struct representing tproxy mapping (pinned to fs)
+struct bpf_elf_map SEC("maps") zt_tproxy_map = {
+                   .type           =       BPF_MAP_TYPE_HASH,
+                   .id             =       BPF_MAP_ID_TPROXY,
+                   .size_key       =       sizeof(uint32_t),
+                   .size_value     =       sizeof(struct tproxy_tuple),
+                   .max_elem       =       BPF_MAX_ENTRIES,
+                   .pinning        =       PIN_GLOBAL_NS,
+           };
+
+//function for accessing tproxy map from kernel space
+static inline struct tproxy_tuple *get_tproxy(__u32 dst_ip)
+           {
+                   struct tproxy_tuple *tu;
+
+                   tu = bpf_map_lookup_elem(&zt_tproxy_map, &dst_ip);
+		   return tu;
+           }
+
+// Function to check if packet contains udp tuple and returns the tuple
 static struct bpf_sock_tuple *get_tuple(void *data, __u64 nh_off,
                                         void *data_end, __u16 eth_proto,
                                         bool *ipv4)
@@ -39,6 +89,7 @@ static struct bpf_sock_tuple *get_tuple(void *data, __u64 nh_off,
         return result;
 }
 
+//ebpf tc code
 SEC("sk_udp_redirect")
 int bpf_sk_assign_test(struct __sk_buff *skb)
 {
@@ -51,34 +102,64 @@ int bpf_sk_assign_test(struct __sk_buff *skb)
         bool ipv4;
         int ret;
 
-        if ((unsigned long)(eth + 1) > (unsigned long)data_end)
-                return TC_ACT_SHOT;
-	//Determin if packet is part of UDP flow and get bpf_sock_tuple
+        if ((unsigned long)(eth + 1) > (unsigned long)data_end){
+            return TC_ACT_SHOT;
+	}
+	//Determine if packet is part of UDP flow and get bpf_sock_tuple
         tuple = get_tuple(data, sizeof(*eth), data_end, eth->h_proto, &ipv4);
-        if (!tuple)
-                return TC_ACT_OK;
+        if (!tuple){
+            return TC_ACT_OK;
+	}
         tuple_len = sizeof(tuple->ipv4);
-	if ((unsigned long)tuple + tuple_len > (unsigned long)skb->data_end)
-		return TC_ACT_SHOT;
-        //match ingress packet dest ip/destport
-        if (tuple->ipv4.dport == bpf_htons(5060) && (tuple->ipv4.sport == bpf_htons(5060))){
+	if ((unsigned long)tuple + tuple_len > (unsigned long)skb->data_end){
+	    return TC_ACT_SHOT;
+	}
+	struct tproxy_tuple *tproxy;
+	//scan zt_tproxy_map to determine if there is an exact match for dest ip 
+        if ((tproxy = get_tproxy(tuple->ipv4.daddr))){
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /24 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x00ffffff))){
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip & 0x00ffffff));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /16 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x0000ffff))){
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip & 0x0000ffff));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        }else{
+            bpf_printk("*** NO MATCH FOUND ON DEST=%x\n", bpf_ntohl(tuple->ipv4.daddr));
+            return TC_ACT_OK;
+        }
+        //match ingress packet src/dst ports
+        if ((tuple->ipv4.dport == tproxy->dst_port) && (tuple->ipv4.sport == tproxy->src_port)){
 	    //tuple to look for egress socket
             sockcheck1.ipv4.daddr = tuple->ipv4.daddr;
-            sockcheck1.ipv4.saddr = tuple->ipv4.saddr ;
-            sockcheck1.ipv4.dport = bpf_htons(5060);
-            sockcheck1.ipv4.sport = bpf_htons(5060);
+            sockcheck1.ipv4.saddr = tuple->ipv4.saddr;
+            sockcheck1.ipv4.dport = tproxy->dst_port;
+            sockcheck1.ipv4.sport = tproxy->src_port;
             sk = bpf_sk_lookup_udp(skb, &sockcheck1, sizeof(sockcheck1.ipv4),BPF_F_CURRENT_NETNS, 0);
 	    //tuple to seach for tproxy
-            sockcheck2.ipv4.daddr = bpf_htonl(0x7f000001);
-            sockcheck2.ipv4.dport = bpf_htons(39150);
 	    /*if sk exists but does not have dst_address must be reverse ingress(intercept egress) socket
 	    so we need to lookup tproxy instead after releasing*/ 
             if((sk) && (!sk->dst_ip4)){
 	       bpf_sk_release(sk);
+	       //tuple to seach for tproxy
+	       sockcheck2.ipv4.daddr = tproxy->tproxy_ip;
+               sockcheck2.ipv4.dport = tproxy->tproxy_port;
 	       sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
 	    }
 	    //no sk found so we again need to lookup tproxy
 	    if(!sk){
+	       //tuple to seach for tproxy
+               sockcheck2.ipv4.daddr = tproxy->tproxy_ip;
+               sockcheck2.ipv4.dport = tproxy->tproxy_port;
 	       sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
 	    }
 	    if(!sk){
