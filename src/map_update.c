@@ -21,10 +21,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "syscall.h"
 #include <arpa/inet.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <linux/bpf.h>
 
 struct tproxy_tuple {
                    __u32 dst_ip;
@@ -35,6 +37,11 @@ struct tproxy_tuple {
                    __u16 src_port;
 		   __u16 tproxy_port;
            };
+
+static inline int scall(enum bpf_cmd cmd, union bpf_attr *attr, unsigned int len)
+{
+        return syscall(__NR_bpf, cmd, attr, len);
+}
 
 int32_t ip2l(char *ip){
     char *endPtr;
@@ -105,7 +112,7 @@ int main(int argc, char **argv){
     map.pathname = (uint64_t) path;
     map.bpf_fd = 0;
     map.file_flags = 0;
-    int fd = bpf(BPF_OBJ_GET, &map, sizeof(map));
+    int fd = scall(BPF_OBJ_GET, &map, sizeof(map));
     if (fd == -1){
 	printf("BPF_OBJ_GET: %s \n", strerror(errno));
         exit(1);
@@ -115,7 +122,7 @@ int main(int argc, char **argv){
     map.key = (uint64_t) &key;
     map.value = (uint64_t) &rule;
     map.flags = BPF_ANY;
-    int result = bpf(BPF_MAP_UPDATE_ELEM, &map, sizeof(map));
+    int result = scall(BPF_MAP_UPDATE_ELEM, &map, sizeof(map));
     if (result){
 	printf("MAP_DELETE_ELEM: %s \n", strerror(errno));
         exit(1);
