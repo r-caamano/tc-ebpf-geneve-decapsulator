@@ -38,6 +38,7 @@
         sudo ./map_update 172.16.240.0 24 5060 5060 58997 
  
   Example: Monitor eppf trace messages
+
            sudo cat /sys/kernel/debug/tracing/trace_pipe
            
            <idle>-0       [001] d.s.. 69289.977151: bpf_trace_printk: prefix_len=0x18
