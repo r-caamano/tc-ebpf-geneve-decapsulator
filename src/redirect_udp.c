@@ -28,6 +28,7 @@
 
 struct tproxy_tuple {
                    __u32 dst_ip;
+		   __u8  prefix_len;
 		   __u32 src_ip;
 		   __u32 tproxy_ip;
 		   __u16 dst_port;
@@ -36,7 +37,7 @@ struct tproxy_tuple {
            };
 
 #define BPF_MAP_ID_TPROXY  1
-#define BPF_MAX_ENTRIES    100
+#define BPF_MAX_ENTRIES    1000
 
 //struct representing tproxy mapping (pinned to fs)
 struct bpf_elf_map SEC("maps") zt_tproxy_map = {
@@ -116,20 +117,226 @@ int bpf_sk_assign_test(struct __sk_buff *skb)
 	}
 	struct tproxy_tuple *tproxy;
 	//scan zt_tproxy_map to determine if there is an exact match for dest ip 
-        if ((tproxy = get_tproxy(tuple->ipv4.daddr))){
+        if ((tproxy = get_tproxy(tuple->ipv4.daddr)) && (tproxy->prefix_len == 0x20)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /31 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0xfeffffff)) && (tproxy->prefix_len == 0x1f)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /30 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0xfcffffff)) && (tproxy->prefix_len == 0x1e)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /29 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0xf8ffffff)) && (tproxy->prefix_len == 0x1d)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /28 mask 
+	}else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0xf0ffffff)) && (tproxy->prefix_len == 0x1c)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /27 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0xe0ffffff)) && (tproxy->prefix_len == 0x1b)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /26 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0xc0ffffff)) && (tproxy->prefix_len == 0x1a)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /25 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x80ffffff)) && (tproxy->prefix_len == 0x19)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
             bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
             bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
             bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
             bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
 	//scan zt_tproxy_map to determine if there is an exact match on /24 mask 
-        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x00ffffff))){
-            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip & 0x00ffffff));
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x00ffffff)) && (tproxy->prefix_len == 0x18)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	 //scan zt_tproxy_map to determine if there is an exact match on /23 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x00feffff)) && (tproxy->prefix_len == 0x17)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /22 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x00fcffff)) && (tproxy->prefix_len == 0x16)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /21 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x00f8ffff)) && (tproxy->prefix_len == 0x15)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /20 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x00f0ffff)) && (tproxy->prefix_len == 0x14)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /19 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x00e0ffff)) && (tproxy->prefix_len == 0x13)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /18 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x00c0ffff)) && (tproxy->prefix_len == 0x12)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /17 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x0080ffff)) && (tproxy->prefix_len == 0x11)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
             bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
             bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
             bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
 	//scan zt_tproxy_map to determine if there is an exact match on /16 mask 
-        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x0000ffff))){
-            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip & 0x0000ffff));
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x0000ffff)) && (tproxy->prefix_len == 0x10)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	 //scan zt_tproxy_map to determine if there is an exact match on /15 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x0000feff)) && (tproxy->prefix_len == 0x0f)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /14 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x0000fcff)) && (tproxy->prefix_len == 0x0e)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /13 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x0000f8ff)) && (tproxy->prefix_len == 0x0d)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /12 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x0000f0ff)) && (tproxy->prefix_len == 0x0c)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /11 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x0000e0ff)) && (tproxy->prefix_len == 0x0b)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /10 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x0000c0ff)) && (tproxy->prefix_len == 0x0a)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /9 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x000080ff)) && (tproxy->prefix_len == 0x09)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /8 mask 
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x000000ff)) && (tproxy->prefix_len == 0x08)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /7 mask
+	}else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x000000fe)) && (tproxy->prefix_len == 0x07)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /6 mask
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x000000fc)) && (tproxy->prefix_len == 0x06)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /5 mask
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x000000f8)) && (tproxy->prefix_len == 0x05)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+        //scan zt_tproxy_map to determine if there is an exact match on /4 mask
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x000000f0)) && (tproxy->prefix_len == 0x04)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /3 mask
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x000000e0)) && (tproxy->prefix_len == 0x03)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /2 mask
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x000000c0)) && (tproxy->prefix_len == 0x02)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
+            bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
+            bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
+            bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+	//scan zt_tproxy_map to determine if there is an exact match on /1 mask
+        }else if ((tproxy = get_tproxy(tuple->ipv4.daddr & 0x00000080)) && (tproxy->prefix_len == 0x01)){
+            bpf_printk("prefix_len=0x%x",tproxy->prefix_len);
+            bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
             bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
             bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
             bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
@@ -140,9 +347,13 @@ int bpf_sk_assign_test(struct __sk_buff *skb)
         //match ingress packet src/dst ports
         if ((tuple->ipv4.dport == tproxy->dst_port) && (tuple->ipv4.sport == tproxy->src_port)){
 	    //tuple to look for egress socket
+	    //bpf_printk("destip=%x",bpf_ntohl(tuple->ipv4.daddr));
+            //bpf_printk("srcip=%x",bpf_ntohl(tuple->ipv4.saddr));
             sockcheck1.ipv4.daddr = tuple->ipv4.daddr;
             sockcheck1.ipv4.saddr = tuple->ipv4.saddr;
+            //sockcheck1.ipv4.dport = bpf_htons(5060);
             sockcheck1.ipv4.dport = tproxy->dst_port;
+            //sockcheck1.ipv4.sport = bpf_htons(5060);
             sockcheck1.ipv4.sport = tproxy->src_port;
             sk = bpf_sk_lookup_udp(skb, &sockcheck1, sizeof(sockcheck1.ipv4),BPF_F_CURRENT_NETNS, 0);
 	    //tuple to seach for tproxy
@@ -150,7 +361,6 @@ int bpf_sk_assign_test(struct __sk_buff *skb)
 	    so we need to lookup tproxy instead after releasing*/ 
             if((sk) && (!sk->dst_ip4)){
 	       bpf_sk_release(sk);
-	       //tuple to seach for tproxy
 	       sockcheck2.ipv4.daddr = tproxy->tproxy_ip;
                sockcheck2.ipv4.dport = tproxy->tproxy_port;
 	       sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
@@ -163,6 +373,7 @@ int bpf_sk_assign_test(struct __sk_buff *skb)
 	       sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
 	    }
 	    if(!sk){
+	       bpf_printk("No Sockets Found!");
 	       return TC_ACT_SHOT;
 	    }
             ret = bpf_sk_assign(skb, sk, 0);

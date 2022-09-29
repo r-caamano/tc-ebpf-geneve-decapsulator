@@ -34,10 +34,22 @@
 
   Example: Insert map entry to direct SIP traffic destined for 172.16.240.0/24
 
-        Usage: ./map_update <hex_dest_prefix ex. 0a000001> <dst_port> <src_port> <tproxy_port>
-        sudo ./map_update 0xac10f000 5060 5060 59181 
-  
+        Usage: ./map_update <ip dest address or prefix> <prefix length> <dst_port> <src_port> <tproxy_port>
+        sudo ./map_update 172.16.240.0 24 5060 5060 58997 
+ 
+  Example: Monitor eppf trace messages
+           sudo cat /sys/kernel/debug/tracing/trace_pipe
+           
+           <idle>-0       [001] d.s.. 69289.977151: bpf_trace_printk: prefix_len=0x18
+           <idle>-0       [001] dNs.. 69289.977183: bpf_trace_printk: match on dest=ac10f000
+           <idle>-0       [001] dNs.. 69289.977184: bpf_trace_printk: match on dest_port=5060
+           <idle>-0       [001] dNs.. 69289.977184: bpf_trace_printk: match on tproxy_ip=7f000001
+           <idle>-0       [001] dNs.. 69289.977185: bpf_trace_printk: forwarding_to_tproxy_port=58997
+           <idle>-0       [001] dNs.. 69289.977187: bpf_trace_printk: Assigned
+ 
   Example: Remove prevoius entry from map
 
-        Usage: ./map_delete_elem <hex_dest_prefix ex. 0a000001>
-        sudo ./map_delete_elem 0xac10f000 
+        Usage: ./map_delete_elem <ip dest address or prefix>
+        sudo ./map_delete_elem 172.16.240.0
+  
+  
