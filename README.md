@@ -37,7 +37,7 @@
         Usage: ./map_update <ip dest address or prefix> <prefix length> <dst_port> <src_port> <tproxy_port>
         sudo ./map_update 172.16.240.0 24 5060 5060 58997 
  
-  Example: Monitor eppf trace messages
+  Example: Monitor ebpf trace messages
 
            sudo cat /sys/kernel/debug/tracing/trace_pipe
            
