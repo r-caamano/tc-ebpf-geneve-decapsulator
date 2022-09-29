@@ -21,17 +21,43 @@
 #include <string.h>
 #include "syscall.h"
 #include <arpa/inet.h>
+#include <ctype.h>
+#include <stdbool.h>
 
+
+int32_t ip2l(char *ip){
+    char *endPtr;
+    int32_t byte1 = strtol(ip,&endPtr,10);
+    if((byte1 <= 0) || (byte1 > 223) || (!isdigit(*(endPtr + 1)))){
+        printf("Invalid IP Address: %s\n",ip);
+        exit(1);
+    }
+    int32_t byte2 = strtol(endPtr + 1,&endPtr,10);
+    if((byte2 < 0) || (byte2 > 255) || (!isdigit(*(endPtr + 1)))){
+       printf("Invalid IP Address: %s\n",ip);
+       exit(1);
+    }
+    int32_t byte3 = strtol(endPtr + 1,&endPtr,10);
+    if((byte3 < 0) || (byte3 > 255) || (!isdigit(*(endPtr + 1)))){
+       printf("Invalid IP Address: %s\n",ip);
+       exit(1);
+    }
+    int32_t byte4 = strtol(endPtr + 1,&endPtr,10);
+    if((byte4 < 0) || (byte4 > 255) || (!(*(endPtr) == '\0'))){
+       printf("Invalid IP Address: %s\n",ip);
+       exit(1);
+    }
+    return (byte1 << 24) + (byte2 << 16) + (byte3 << 8) + byte4;
+}
 
 int main(int argc, char **argv){
     union bpf_attr map;
     const char *path = "/sys/fs/bpf/tc/globals/zt_tproxy_map";
-    char *endPtr;
     if (argc != 2) {
-                fprintf(stderr, "Usage: %s <hex_dest_prefix ex. 0a000001>\n", argv[0]);
+                fprintf(stderr, "Usage: %s <ip dest address or prefix>\n", argv[0]);
                 exit(0);
         }
-    int32_t key = htonl(strtol(argv[1],&endPtr,16));
+    int32_t key = htonl(ip2l(argv[1]));
     //open tproxy map
     memset(&map, 0, sizeof(map));
     map.pathname = (uint64_t) path;

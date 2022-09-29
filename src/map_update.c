@@ -23,9 +23,12 @@
 #include <string.h>
 #include "syscall.h"
 #include <arpa/inet.h>
+#include <stdbool.h>
+#include <ctype.h>
 
 struct tproxy_tuple {
                    __u32 dst_ip;
+		   __u8  prefix_len;
                    __u32 src_ip;
 		   __u32 tproxy_ip;
                    __u16 dst_port;
@@ -33,22 +36,69 @@ struct tproxy_tuple {
 		   __u16 tproxy_port;
            };
 
+int32_t ip2l(char *ip){
+    char *endPtr;
+    int32_t byte1 = strtol(ip,&endPtr,10);
+    if((byte1 <= 0) || (byte1 > 223) || (!isdigit(*(endPtr + 1)))){
+        printf("Invalid IP Address: %s\n",ip);
+        exit(1);	
+    }
+    int32_t byte2 = strtol(endPtr + 1,&endPtr,10);
+    if((byte2 < 0) || (byte2 > 255) || (!isdigit(*(endPtr + 1)))){
+       printf("Invalid IP Address: %s\n",ip);
+       exit(1);
+    }
+    int32_t byte3 = strtol(endPtr + 1,&endPtr,10);
+    if((byte3 < 0) || (byte3 > 255) || (!isdigit(*(endPtr + 1)))){
+       printf("Invalid IP Address: %s\n",ip);
+       exit(1);
+    }
+    int32_t byte4 = strtol(endPtr + 1,&endPtr,10);
+    if((byte4 < 0) || (byte4 > 255) || (!(*(endPtr) == '\0'))){
+       printf("Invalid IP Address: %s\n",ip);
+       exit(1);
+    }
+    return (byte1 << 24) + (byte2 << 16) + (byte3 << 8) + byte4;
+}
+
+unsigned short port2s(char *port){
+    char *endPtr;
+    int32_t tmpint = strtol(port,&endPtr,10);
+    if((tmpint <=0) || (tmpint > 65535) || (!(*(endPtr) == '\0'))){
+       printf("Invalid Port: %s\n", port);
+       exit(1);
+    }
+    unsigned short usint = (unsigned)tmpint;
+    return usint;
+}
+
+__u8 len2u8(char *len){
+    char *endPtr;
+    int32_t tmpint = strtol(len,&endPtr,10);
+    if((tmpint <= 0) || (tmpint > 32) || (!(*(endPtr) == '\0'))){
+       printf("Invalid Prefix Length: %s\n", len);
+       exit(1);
+    }
+    __u8 u8int = (__u8)tmpint;
+    return u8int;
+}
+
 int main(int argc, char **argv){
     union bpf_attr map;
     const char *path = "/sys/fs/bpf/tc/globals/zt_tproxy_map";
-    char *endPtr;
-    if (argc < 5) {
-        fprintf(stderr, "Usage: %s <hex_dest_prefix ex. 0a000001> <dst_port> <src_port> <tproxy_port>\n", argv[0]);
+    if (argc < 6) {
+        fprintf(stderr, "Usage: %s <ip dest address or prefix> <prefix length> <dst_port> <src_port> <tproxy_port>\n", argv[0]);
         exit(0);
     }
-    int32_t key = htonl(strtol(argv[1],&endPtr,16));
+    int32_t key = htonl(ip2l(argv[1]));
     struct tproxy_tuple rule = {
 	key,//dest address also used as key
+	len2u8(argv[2]),
 	0x0,//zero source address
         0x0100007f,//standard tproxy localhost 
-        htons((unsigned short)strtol(argv[2],&endPtr,10)),//dst_port
-        htons((unsigned short)strtol(argv[3],&endPtr,10)),//src_port
-        htons(atoi(argv[4]))//tproxy_port
+        htons(port2s(argv[3])),//dst_port
+        htons(port2s(argv[4])),//src_port
+        htons(port2s(argv[5]))//tproxy_port
     };
     //Open BPF zt_tproxy_map map
     memset(&map, 0, sizeof(map));
