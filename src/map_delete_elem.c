@@ -26,10 +26,6 @@
 #include <unistd.h>
 #include <linux/bpf.h>
 
-static inline int scall(enum bpf_cmd cmd, union bpf_attr *attr, unsigned int len)
-{
-        return syscall(__NR_bpf, cmd, attr, len);
-}
 
 
 int32_t ip2l(char *ip){
@@ -69,7 +65,7 @@ int main(int argc, char **argv){
     memset(&map, 0, sizeof(map));
     map.pathname = (uint64_t) path;
     map.bpf_fd = 0;
-    int fd = scall(BPF_OBJ_GET, &map, sizeof(map));
+    int fd = syscall(__NR_bpf, BPF_OBJ_GET, &map, sizeof(map));
     if (fd == -1){
         printf("BPF_OBJ_GET: %s\n", strerror(errno));
 	exit(1);
@@ -77,7 +73,7 @@ int main(int argc, char **argv){
     //delete element with specified key
     map.map_fd = fd;
     map.key = (uint64_t) &key;
-    int result = scall(BPF_MAP_DELETE_ELEM, &map, sizeof(map));
+    int result = syscall(__NR_bpf, BPF_MAP_DELETE_ELEM, &map, sizeof(map));
     if (result){
        printf("MAP_DELETE_ELEM: %s\n", strerror(errno));
        exit(1);
