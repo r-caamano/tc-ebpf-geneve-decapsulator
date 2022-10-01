@@ -29,16 +29,19 @@
 #include <linux/bpf.h>
 
 struct tproxy_tuple {
-                   __u32 dst_ip;
-		   __u8  prefix_len;
-                   __u32 src_ip;
-		   __u32 tproxy_ip;
-                   __u16 dst_port;
-                   __u16 src_port;
-		   __u16 tproxy_port;
-           };
+    __u32 dst_ip;
+    __u32 src_ip;
+	__u32 tproxy_ip;
+    __u16 dst_port;
+    __u16 src_port;
+	__u16 tproxy_port;
+};
 
-
+struct tproxy_key {
+           __u32  dst_ip;
+		   __u16  prefix_len;
+           __u16  pad;
+};
 
 int32_t ip2l(char *ip){
     char *endPtr;
@@ -76,15 +79,15 @@ unsigned short port2s(char *port){
     return usint;
 }
 
-__u8 len2u8(char *len){
+__u16 len2u16(char *len){
     char *endPtr;
     int32_t tmpint = strtol(len,&endPtr,10);
     if((tmpint <= 0) || (tmpint > 32) || (!(*(endPtr) == '\0'))){
        printf("Invalid Prefix Length: %s\n", len);
        exit(1);
     }
-    __u8 u8int = (__u8)tmpint;
-    return u8int;
+    __u16 u16int = (__u16)tmpint;
+    return u16int;
 }
 
 int main(int argc, char **argv){
@@ -94,11 +97,10 @@ int main(int argc, char **argv){
         fprintf(stderr, "Usage: %s <ip dest address or prefix> <prefix length> <dst_port> <src_port> <tproxy_port>\n", argv[0]);
         exit(0);
     }
-    int32_t key = htonl(ip2l(argv[1]));
+    struct tproxy_key key = {htonl(ip2l(argv[1])), len2u16(argv[2]),0};
     struct tproxy_tuple rule = {
-	key,//dest address also used as key
-	len2u8(argv[2]),
-	0x0,//zero source address
+	    htonl(ip2l(argv[1])),
+	    0x0,//zero source address
         0x0100007f,//standard tproxy localhost 
         htons(port2s(argv[3])),//dst_port
         htons(port2s(argv[4])),//src_port
