@@ -50,7 +50,7 @@
  
   Example: Remove prevoius entry from map
 
-        Usage: ./map_delete_elem <ip dest address or prefix>
-        sudo ./map_delete_elem 172.16.240.0
+        Usage: ./map_delete_elem <ip dest address or prefix> <prefix len>
+        sudo ./map_delete_elem 172.16.240.0 24
   
   

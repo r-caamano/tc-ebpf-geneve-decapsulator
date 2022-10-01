@@ -26,7 +26,11 @@
 #include <unistd.h>
 #include <linux/bpf.h>
 
-
+struct tproxy_key {
+           __u32  dst_ip;
+		   __u16  prefix_len;
+           __u16  pad;
+};
 
 int32_t ip2l(char *ip){
     char *endPtr;
@@ -53,14 +57,25 @@ int32_t ip2l(char *ip){
     return (byte1 << 24) + (byte2 << 16) + (byte3 << 8) + byte4;
 }
 
+__u16 len2u16(char *len){
+    char *endPtr;
+    int32_t tmpint = strtol(len,&endPtr,10);
+    if((tmpint <= 0) || (tmpint > 32) || (!(*(endPtr) == '\0'))){
+       printf("Invalid Prefix Length: %s\n", len);
+       exit(1);
+    }
+    __u16 u16int = (__u16)tmpint;
+    return u16int;
+}
+
 int main(int argc, char **argv){
     union bpf_attr map;
     const char *path = "/sys/fs/bpf/tc/globals/zt_tproxy_map";
-    if (argc != 2) {
-                fprintf(stderr, "Usage: %s <ip dest address or prefix>\n", argv[0]);
+    if (argc != 3) {
+                fprintf(stderr, "Usage: %s <ip dest address or prefix> <prefix len>\n", argv[0]);
                 exit(0);
-        }
-    int32_t key = htonl(ip2l(argv[1]));
+    }
+    struct tproxy_key key = {htonl(ip2l(argv[1])), len2u16(argv[2]),0};
     //open tproxy map
     memset(&map, 0, sizeof(map));
     map.pathname = (uint64_t) path;
