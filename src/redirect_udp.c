@@ -25,27 +25,40 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 #include <iproute2/bpf_elf.h>
+#include <stdbool.h>
 
+#define BPF_MAP_ID_TPROXY  1
+#define BPF_MAX_ENTRIES    100
+#define MAX_INDEX_ENTRIES  250
+
+struct tproxy_tcp_port_mapping {
+    __u16 low_port;
+    __u16 high_port;
+    __u16 tproxy_port;
+    __u32 tproxy_ip;
+};
+
+struct tproxy_udp_port_mapping {
+    __u16 low_port;
+    __u16 high_port;
+    __u16 tproxy_port;
+    __u32 tproxy_ip;
+};
 
 struct tproxy_tuple {
     __u32 dst_ip;
 	__u32 src_ip;
-	__u32 tproxy_ip;
-	__u16 dst_port;
-	__u16 src_port;
-	__u16 tproxy_port;
-    __u16 port[65535];
+    __u16 index_len;
+    struct tproxy_udp_port_mapping udp_mapping[65535];
+    struct tproxy_tcp_port_mapping tcp_mapping[65535];
+    __u16 index_table[MAX_INDEX_ENTRIES];
 };
 
 struct tproxy_key {
     __u32 dst_ip;
     __u16 prefix_len;
-    __u16 pad; 
-
+    __u16 pad;
 };
-
-#define BPF_MAP_ID_TPROXY  1
-#define BPF_MAX_ENTRIES    100
 
 //struct representing tproxy mapping (pinned to fs)
 struct bpf_elf_map SEC("maps") zt_tproxy_map = {
@@ -97,30 +110,30 @@ static struct bpf_sock_tuple *get_tuple(void *data, __u64 nh_off,
 
 //ebpf tc code
 SEC("sk_udp_redirect")
-int bpf_sk_assign_test(struct __sk_buff *skb)
-{
-        void *data_end = (void *)(long)skb->data_end;
-        void *data = (void *)(long)skb->data;
-        struct ethhdr *eth = (struct ethhdr *)(data);
-        struct bpf_sock_tuple *tuple, sockcheck1 = {0}, sockcheck2 = {0};
-        struct bpf_sock *sk; 
-        int tuple_len;
-        bool ipv4;
-        int ret;
+int bpf_sk_assign_test(struct __sk_buff *skb){
+    void *data_end = (void *)(long)skb->data_end;
+    void *data = (void *)(long)skb->data;
+    struct ethhdr *eth = (struct ethhdr *)(data);
+    struct bpf_sock_tuple *tuple, sockcheck1 = {0}, sockcheck2 = {0};
+    struct bpf_sock *sk; 
+    int tuple_len;
+    bool ipv4;
+    int ret;
 
-        if ((unsigned long)(eth + 1) > (unsigned long)data_end){
+    if ((unsigned long)(eth + 1) > (unsigned long)data_end){
             return TC_ACT_SHOT;
 	}
 	//Determine if packet is part of UDP flow and get bpf_sock_tuple
-        tuple = get_tuple(data, sizeof(*eth), data_end, eth->h_proto, &ipv4);
-        if (!tuple){
-            return TC_ACT_OK;
+    tuple = get_tuple(data, sizeof(*eth), data_end, eth->h_proto, &ipv4);
+    if (!tuple){
+        return TC_ACT_OK;
 	}
     tuple_len = sizeof(tuple->ipv4);
 	if ((unsigned long)tuple + tuple_len > (unsigned long)skb->data_end){
 	    return TC_ACT_SHOT;
 	}
 	struct tproxy_tuple *tproxy;
+    struct tproxy_udp_port_mapping udp_mapping;
 	__u32 exponent=24;
 	__u32 mask = 0xffffffff;
 	__u16 maxlen = 32;
@@ -129,11 +142,21 @@ int bpf_sk_assign_test(struct __sk_buff *skb)
             if ((tproxy = get_tproxy(key))){
                 bpf_printk("prefix_len=0x%x",key.prefix_len);
                 bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
-                bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
-                bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
-                bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
-                bpf_printk("test array=%d",tproxy->port[0]);
-		        break;
+                __u16 max_entries = tproxy->index_len;
+                if(max_entries > MAX_INDEX_ENTRIES){
+                    max_entries = MAX_INDEX_ENTRIES;
+                }
+                for(int index=0; index < max_entries; index++){
+                    int key = tproxy->index_table[index];
+                    if(tproxy->udp_mapping[key].low_port){
+                        bpf_printk("udp_mapping->%d",bpf_ntohs(tproxy->udp_mapping[key].low_port));
+                        //bpf_printk("udp_mapping found");
+                        udp_mapping = tproxy->udp_mapping[key];
+                        //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].high_port);
+                        //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].tproxy_port);
+			            return TC_ACT_OK;
+                    }
+                }  
             }
             if(mask == 0x00ffffff){
                 exponent=16;
@@ -159,48 +182,6 @@ int bpf_sk_assign_test(struct __sk_buff *skb)
             }
             exponent++;
     }
-    if(!tproxy){
-        return TC_ACT_OK;
-    }
-    //match ingress packet dst port
-    if (tuple->ipv4.dport == tproxy->dst_port){
-	    //tuple to look for egress socket
-        sockcheck1.ipv4.daddr = tuple->ipv4.daddr;
-        sockcheck1.ipv4.saddr = tuple->ipv4.saddr;
-        sockcheck1.ipv4.dport = tproxy->dst_port;
-        sockcheck1.ipv4.sport = tproxy->src_port;
-        sk = bpf_sk_lookup_udp(skb, &sockcheck1, sizeof(sockcheck1.ipv4),BPF_F_CURRENT_NETNS, 0);
-	    //tuple to seach for tproxy
-	    /*if sk exists but does not have dst_address must be reverse ingress(intercept egress) socket
-	    so we need to lookup tproxy instead after releasing*/ 
-        if((sk) && (!sk->dst_ip4)){
-	        bpf_sk_release(sk);
-	        sockcheck2.ipv4.daddr = tproxy->tproxy_ip;
-            sockcheck2.ipv4.dport = tproxy->tproxy_port;
-	        sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
-	    }
-	    //no sk found so we again need to lookup tproxy
-	    if(!sk){
-	       //tuple to seach for tproxy
-            sockcheck2.ipv4.daddr = tproxy->tproxy_ip;
-            sockcheck2.ipv4.dport = tproxy->tproxy_port;
-	        sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
-	    }
-	    if(!sk){
-	       bpf_printk("No Sockets Found!");
-	       return TC_ACT_SHOT;
-	    }
-        ret = bpf_sk_assign(skb, sk, 0);
-	    bpf_sk_release(sk);
-	    if(ret == 0){
-	        bpf_printk("Assigned");
-	        return TC_ACT_OK;
-	    }else{
-	        bpf_printk("failed");
-	        return TC_ACT_SHOT;
-	    }
-    }
     return TC_ACT_OK;
-
 }
 SEC("license") const char __license[] = "Dual BSD/GPL";

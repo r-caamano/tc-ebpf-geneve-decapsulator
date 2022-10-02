@@ -28,14 +28,29 @@
 #include <unistd.h>
 #include <linux/bpf.h>
 
+#define MAX_INDEX_ENTRIES  250
+
+struct tproxy_tcp_port_mapping {
+    __u16 low_port;
+    __u16 high_port;
+    __u16 tproxy_port;
+    __u32 tproxy_ip;
+};
+
+struct tproxy_udp_port_mapping {
+    __u16 low_port;
+    __u16 high_port;
+    __u16 tproxy_port;
+    __u32 tproxy_ip;
+};
+
 struct tproxy_tuple {
     __u32 dst_ip;
-    __u32 src_ip;
-	__u32 tproxy_ip;
-    __u16 dst_port;
-    __u16 src_port;
-    __u16 tproxy_port;
-    __u16 port[65535];
+	__u32 src_ip;
+    __u16 index_len;
+    struct tproxy_udp_port_mapping udp_mapping[65535];
+    struct tproxy_tcp_port_mapping tcp_mapping[65535];
+    __u16 index_table[MAX_INDEX_ENTRIES];
 };
 
 struct tproxy_key {
@@ -111,32 +126,41 @@ int main(int argc, char **argv){
         exit(1);
     }
     //insert tproxy socket rule into map
+    struct tproxy_udp_port_mapping udp_mapping = {
+            htons(port2s(argv[3])),
+            htons(port2s(argv[4])),
+            htons(port2s(argv[5])),
+            0x0100007f
+    };
     map.map_fd = fd;
     map.key = (uint64_t)&key;
     map.value = (uint64_t)&orule;
     int lookup = syscall(__NR_bpf, BPF_MAP_LOOKUP_ELEM, &map, sizeof(map));
+    unsigned short index = htons(port2s(argv[3]));
     if(lookup){
         struct tproxy_tuple rule = {
 	        htonl(ip2l(argv[1])),
 	        0x0,//zero source address
-            0x0100007f,//standard tproxy localhost 
-            htons(port2s(argv[3])),//dst_port
-            htons(port2s(argv[4])),//src_port
-            htons(port2s(argv[5])),//tproxy_port
-	        {}
+            1,
+            {},
+            {},
+            {index}
         };
-        rule.port[5060] = 5060;
+        
+        memcpy((void *)&rule.udp_mapping[index],(void *)&udp_mapping,sizeof(struct tproxy_udp_port_mapping));
         map.value = (uint64_t)&rule;
-        printf("rule[5060]=%d\n",rule.port[5060]);
+        if(!rule.udp_mapping[index].low_port){
+            printf("memcpy failed");
+            exit(1);
+        }
+        //printf("rule[%d]=%x\n",index,rule.udp_mapping[index].tproxy_ip);
     }else{
         printf("lookup success\n");
-        printf("array index 5060 = %d\n", orule.port[5060]);
-        if(orule.port[1]){
-            printf("orule[1]=%d\n",orule.port[1]);
+        if (orule.udp_mapping[index].low_port == index){
+            printf("udp_mapping[%d].low_port = %d\n", index,ntohs(orule.udp_mapping[index].low_port));
         }
         else{
-            printf("orule[1] does not exist\n");
-            orule.port[1] = 1;
+            printf("udp_mapping[5060] does not exist\n");
         }
     }
     map.flags = BPF_ANY;
