@@ -34,15 +34,15 @@ struct tproxy_tuple {
 	__u16 dst_port;
 	__u16 src_port;
 	__u16 tproxy_port;
+    __u16 port[65535];
 };
+
 struct tproxy_key {
     __u32 dst_ip;
     __u16 prefix_len;
     __u16 pad; 
 
 };
-
-
 
 #define BPF_MAP_ID_TPROXY  1
 #define BPF_MAX_ENTRIES    100
@@ -132,6 +132,7 @@ int bpf_sk_assign_test(struct __sk_buff *skb)
                 bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
                 bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
                 bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
+                bpf_printk("test array=%d",tproxy->port[0]);
 		        break;
             }
             if(mask == 0x00ffffff){

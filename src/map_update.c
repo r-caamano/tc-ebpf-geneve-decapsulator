@@ -34,7 +34,8 @@ struct tproxy_tuple {
 	__u32 tproxy_ip;
     __u16 dst_port;
     __u16 src_port;
-	__u16 tproxy_port;
+    __u16 tproxy_port;
+    __u16 port[65535];
 };
 
 struct tproxy_key {
@@ -98,14 +99,7 @@ int main(int argc, char **argv){
         exit(0);
     }
     struct tproxy_key key = {htonl(ip2l(argv[1])), len2u16(argv[2]),0};
-    struct tproxy_tuple rule = {
-	    htonl(ip2l(argv[1])),
-	    0x0,//zero source address
-        0x0100007f,//standard tproxy localhost 
-        htons(port2s(argv[3])),//dst_port
-        htons(port2s(argv[4])),//src_port
-        htons(port2s(argv[5]))//tproxy_port
-    };
+    struct tproxy_tuple orule;
     //Open BPF zt_tproxy_map map
     memset(&map, 0, sizeof(map));
     map.pathname = (uint64_t) path;
@@ -118,12 +112,37 @@ int main(int argc, char **argv){
     }
     //insert tproxy socket rule into map
     map.map_fd = fd;
-    map.key = (uint64_t) &key;
-    map.value = (uint64_t) &rule;
+    map.key = (uint64_t)&key;
+    map.value = (uint64_t)&orule;
+    int lookup = syscall(__NR_bpf, BPF_MAP_LOOKUP_ELEM, &map, sizeof(map));
+    if(lookup){
+        struct tproxy_tuple rule = {
+	        htonl(ip2l(argv[1])),
+	        0x0,//zero source address
+            0x0100007f,//standard tproxy localhost 
+            htons(port2s(argv[3])),//dst_port
+            htons(port2s(argv[4])),//src_port
+            htons(port2s(argv[5])),//tproxy_port
+	        {}
+        };
+        rule.port[5060] = 5060;
+        map.value = (uint64_t)&rule;
+        printf("rule[5060]=%d\n",rule.port[5060]);
+    }else{
+        printf("lookup success\n");
+        printf("array index 5060 = %d\n", orule.port[5060]);
+        if(orule.port[1]){
+            printf("orule[1]=%d\n",orule.port[1]);
+        }
+        else{
+            printf("orule[1] does not exist\n");
+            orule.port[1] = 1;
+        }
+    }
     map.flags = BPF_ANY;
     int result = syscall(__NR_bpf, BPF_MAP_UPDATE_ELEM, &map, sizeof(map));
     if (result){
-	printf("MAP_DELETE_ELEM: %s \n", strerror(errno));
+	printf("MAP_UPDATE_ELEM: %s \n", strerror(errno));
         exit(1);
     }
     close(fd);
