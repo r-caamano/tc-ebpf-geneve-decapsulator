@@ -26,10 +26,11 @@
 #include <bpf/bpf_endian.h>
 #include <iproute2/bpf_elf.h>
 #include <stdbool.h>
+#include <linux/tcp.h>
 
 #define BPF_MAP_ID_TPROXY  1
-#define BPF_MAX_ENTRIES    100
-#define MAX_INDEX_ENTRIES  100
+#define BPF_MAX_ENTRIES    10
+#define MAX_INDEX_ENTRIES  10
 #define MAX_TABLE_SIZE  65536
 
 struct tproxy_tcp_port_mapping {
@@ -103,8 +104,8 @@ static struct bpf_sock_tuple *get_tuple(void *data, __u64 nh_off,
             *udp = true;    
         }else if(proto == IPPROTO_TCP){
             *tcp = true;
-        }
-        else{
+        
+	}else{
             return NULL;
         }
         *ipv4 = true;
@@ -151,6 +152,9 @@ int bpf_sk_assign_test(struct __sk_buff *skb){
 	__u32 exponent=24;
 	__u32 mask = 0xffffffff;
 	__u16 maxlen = 32;
+    if(tcp && (bpf_ntohs(tuple->ipv4.dport) == 22)){
+        return TC_ACT_OK;
+    }
 	for (__u16 count = 0;count <= maxlen; count++){
             struct tproxy_key key = {(tuple->ipv4.daddr & mask), maxlen-count,0};
             if ((tproxy = get_tproxy(key))){
@@ -176,7 +180,7 @@ int bpf_sk_assign_test(struct __sk_buff *skb){
                                 udp_mapping = tproxy->udp_mapping[port_key];
                                 //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].high_port);
                                 //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].tproxy_port);
-                                return TC_ACT_OK;
+                                break;
                             }
                         }
                     }
@@ -198,12 +202,11 @@ int bpf_sk_assign_test(struct __sk_buff *skb){
                                 tcp_mapping = tproxy->tcp_mapping[port_key];
                                 //bpf_printk("tcp_mapping->%d",tproxy->tcp_mapping[index].high_port);
                                 //bpf_printk("tcp_mapping->%d",tproxy->tcp_mapping[index].tproxy_port);
-                                return TC_ACT_OK;
+                                break;
                             }
                         }
                     }
                 }
-                return TC_ACT_SHOT;  
             }
             if(mask == 0x00ffffff){
                 exponent=16;
@@ -216,7 +219,7 @@ int bpf_sk_assign_test(struct __sk_buff *skb){
             }
             if(mask == 0x00000080){
                 //bpf_printk("*** NO MATCH FOUND ON DEST=%x\n", bpf_ntohl(tuple->ipv4.daddr));
-                return TC_ACT_OK;
+                return TC_ACT_SHOT;
             }
             if((mask >= 0x80ffffff) && (exponent >= 24)){
                 mask = mask - (1 << exponent);
@@ -229,6 +232,50 @@ int bpf_sk_assign_test(struct __sk_buff *skb){
             }
             exponent++;
     }
-    return TC_ACT_OK;
+    if((!tcp_mapping.low_port) && (!udp_mapping.low_port)){
+           return TC_ACT_OK;
+    }
+    //match ingress packet dst port
+    if (udp){
+        //tuple to look for egress socket
+        if (tuple->ipv4.dport == tuple->ipv4.sport ){
+	    sockcheck1.ipv4.daddr = tuple->ipv4.daddr;
+            sockcheck1.ipv4.saddr = tuple->ipv4.saddr;
+            sockcheck1.ipv4.dport = tuple->ipv4.dport;
+            sockcheck1.ipv4.sport = tuple->ipv4.sport;
+            sk = bpf_sk_lookup_udp(skb, &sockcheck1, sizeof(sockcheck1.ipv4), BPF_F_CURRENT_NETNS, 0);
+            //tuple to seach for tproxy
+            /*if sk exists but does not have dst_address must be reverse ingress(intercept egress) socket
+            so we need to lookup tproxy instead after releasing*/
+            if ((sk) && (!sk->dst_ip4)){
+                bpf_sk_release(sk);
+            }
+        }
+        //no sk found so we again need to lookup tproxy
+        if(!sk){
+            //tuple to seach for tproxy
+            sockcheck2.ipv4.daddr = udp_mapping.tproxy_ip;
+            sockcheck2.ipv4.dport = udp_mapping.tproxy_port;
+            sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
+	}
+    }else{
+	sockcheck2.ipv4.daddr = tcp_mapping.tproxy_ip;
+        sockcheck2.ipv4.dport = tcp_mapping.tproxy_port;
+        sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
+    }
+    if(!sk){
+        bpf_printk("No Sockets Found!");
+        return TC_ACT_SHOT;
+    }
+    ret = bpf_sk_assign(skb, sk, 0);
+    bpf_sk_release(sk);
+    if(ret == 0){
+        bpf_printk("Assigned");
+        return TC_ACT_OK;
+    }else{
+        bpf_printk("failed");
+            return TC_ACT_SHOT;
+    }
+    return TC_ACT_SHOT;
 }
 SEC("license") const char __license[] = "Dual BSD/GPL";
