@@ -129,8 +129,8 @@ int bpf_sk_assign_test(struct __sk_buff *skb){
     struct bpf_sock *sk; 
     int tuple_len;
     bool ipv4;
-    bool udp;
-    bool tcp;
+    bool udp=false;
+    bool tcp=false;
     int ret;
 
     if ((unsigned long)(eth + 1) > (unsigned long)data_end){
@@ -147,6 +147,7 @@ int bpf_sk_assign_test(struct __sk_buff *skb){
 	}
 	struct tproxy_tuple *tproxy;
     struct tproxy_udp_port_mapping udp_mapping;
+    struct tproxy_tcp_port_mapping tcp_mapping;
 	__u32 exponent=24;
 	__u32 mask = 0xffffffff;
 	__u16 maxlen = 32;
@@ -157,21 +158,48 @@ int bpf_sk_assign_test(struct __sk_buff *skb){
                 bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
                 bpf_printk("tcp_index_len=%x",tproxy->tcp_index_len);
                 bpf_printk("udp_index_len=%x",tproxy->udp_index_len);
-                __u16 max_entries = tproxy->udp_index_len;
-                if(max_entries > MAX_INDEX_ENTRIES){
-                    max_entries = MAX_INDEX_ENTRIES;
-                }
-                for(int index=0; index < max_entries; index++){
-                    int port_key = tproxy->udp_index_table[index];
-                    bpf_printk("index key=%d", bpf_ntohs(port_key));
-                    if(tproxy->udp_mapping[port_key].low_port){
-                        if(tproxy->udp_mapping[port_key].low_port == tuple->ipv4.dport){
-                            bpf_printk("udp_mapping->%d",bpf_ntohs(tproxy->udp_mapping[port_key].low_port));
-                            //bpf_printk("udp_mapping found");
-                            udp_mapping = tproxy->udp_mapping[port_key];
-                            //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].high_port);
-                            //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].tproxy_port);
-                            return TC_ACT_OK;
+                if(udp) {
+                    __u16 udp_max_entries = tproxy->udp_index_len;
+                    if (udp_max_entries > MAX_INDEX_ENTRIES) {
+                        udp_max_entries = MAX_INDEX_ENTRIES;
+                    }
+                    for (int index = 0; index < udp_max_entries; index++) {
+                        int port_key = tproxy->udp_index_table[index];
+                        bpf_printk("index key=%d", bpf_ntohs(port_key));
+                        if (tproxy->udp_mapping[port_key].low_port) {
+			    bpf_printk("dport=%d",bpf_ntohs(tuple->ipv4.dport));
+			    bpf_printk("low_port=%d",bpf_ntohs(tproxy->udp_mapping[port_key].low_port));
+			    bpf_printk("high_port=%d",bpf_ntohs(tproxy->udp_mapping[port_key].high_port));
+                            if ((bpf_ntohs(tuple->ipv4.dport) >= bpf_ntohs(tproxy->udp_mapping[port_key].low_port)) && (bpf_ntohs(tuple->ipv4.dport) <= bpf_ntohs(tproxy->udp_mapping[port_key].high_port))) {
+                                bpf_printk("udp_tproxy_mapping->%d", bpf_ntohs(tproxy->udp_mapping[port_key].tproxy_port));
+                                //bpf_printk("udp_mapping found");
+                                udp_mapping = tproxy->udp_mapping[port_key];
+                                //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].high_port);
+                                //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].tproxy_port);
+                                return TC_ACT_OK;
+                            }
+                        }
+                    }
+                }else{
+                    __u16 tcp_max_entries = tproxy->tcp_index_len;
+                    if (tcp_max_entries > MAX_INDEX_ENTRIES) {
+                        tcp_max_entries = MAX_INDEX_ENTRIES;
+                    }
+                    for (int index = 0; index < tcp_max_entries; index++) {
+                        int port_key = tproxy->tcp_index_table[index];
+                        bpf_printk("index key=%d", bpf_ntohs(port_key));
+                        if (tproxy->tcp_mapping[port_key].low_port) {
+			    bpf_printk("dport=%d",bpf_ntohs(tuple->ipv4.dport));
+                            bpf_printk("low_port=%d",bpf_ntohs(tproxy->tcp_mapping[port_key].low_port));
+                            bpf_printk("high_port=%d",bpf_ntohs(tproxy->tcp_mapping[port_key].high_port));
+                            if ((bpf_ntohs(tuple->ipv4.dport) >= bpf_ntohs(tproxy->tcp_mapping[port_key].low_port)) && (bpf_ntohs(tuple->ipv4.dport) <= bpf_ntohs(tproxy->tcp_mapping[port_key].high_port))) {
+                                bpf_printk("tcp_tproxy_mapping->%d", bpf_ntohs(tproxy->tcp_mapping[port_key].tproxy_port));
+                                //bpf_printk("tcp_mapping found");
+                                tcp_mapping = tproxy->tcp_mapping[port_key];
+                                //bpf_printk("tcp_mapping->%d",tproxy->tcp_mapping[index].high_port);
+                                //bpf_printk("tcp_mapping->%d",tproxy->tcp_mapping[index].tproxy_port);
+                                return TC_ACT_OK;
+                            }
                         }
                     }
                 }
@@ -187,7 +215,7 @@ int bpf_sk_assign_test(struct __sk_buff *skb){
                 exponent=0;
             }
             if(mask == 0x00000080){
-                bpf_printk("*** NO MATCH FOUND ON DEST=%x\n", bpf_ntohl(tuple->ipv4.daddr));
+                //bpf_printk("*** NO MATCH FOUND ON DEST=%x\n", bpf_ntohl(tuple->ipv4.daddr));
                 return TC_ACT_OK;
             }
             if((mask >= 0x80ffffff) && (exponent >= 24)){
