@@ -29,7 +29,8 @@
 
 #define BPF_MAP_ID_TPROXY  1
 #define BPF_MAX_ENTRIES    100
-#define MAX_INDEX_ENTRIES  250
+#define MAX_INDEX_ENTRIES  100
+#define MAX_TABLE_SIZE  65536
 
 struct tproxy_tcp_port_mapping {
     __u16 low_port;
@@ -48,10 +49,12 @@ struct tproxy_udp_port_mapping {
 struct tproxy_tuple {
     __u32 dst_ip;
 	__u32 src_ip;
-    __u16 index_len;
-    struct tproxy_udp_port_mapping udp_mapping[65535];
-    struct tproxy_tcp_port_mapping tcp_mapping[65535];
-    __u16 index_table[MAX_INDEX_ENTRIES];
+    __u16 udp_index_len;
+    __u16 tcp_index_len;
+    __u16 udp_index_table[MAX_INDEX_ENTRIES];
+    __u16 tcp_index_table[MAX_INDEX_ENTRIES];
+    struct tproxy_udp_port_mapping udp_mapping[MAX_TABLE_SIZE];
+    struct tproxy_tcp_port_mapping tcp_mapping[MAX_TABLE_SIZE];
 };
 
 struct tproxy_key {
@@ -80,7 +83,7 @@ static inline struct tproxy_tuple *get_tproxy(struct tproxy_key dst_ip){
 // Function to check if packet contains udp tuple and returns the tuple
 static struct bpf_sock_tuple *get_tuple(void *data, __u64 nh_off,
                                         void *data_end, __u16 eth_proto,
-                                        bool *ipv4){
+                                        bool *ipv4, bool *udp, bool *tcp){
     struct bpf_sock_tuple *result;
     __u8 proto = 0;
 
@@ -96,15 +99,23 @@ static struct bpf_sock_tuple *get_tuple(void *data, __u64 nh_off,
             return NULL;
 		}
         proto = iph->protocol;
+        if(proto == IPPROTO_UDP){
+            *udp = true;    
+        }else if(proto == IPPROTO_TCP){
+            *tcp = true;
+        }
+        else{
+            return NULL;
+        }
         *ipv4 = true;
         result = (struct bpf_sock_tuple *)(void*)(long)&iph->saddr;
     } else {
         return NULL;
     }
 
-    if (((unsigned long)result + 1 > (unsigned long)data_end )|| (proto != IPPROTO_UDP)){
+    /*if (((unsigned long)result + 1 > (unsigned long)data_end )){
         return NULL;
-    }
+    }*/
     return result;
 }
 
@@ -118,13 +129,15 @@ int bpf_sk_assign_test(struct __sk_buff *skb){
     struct bpf_sock *sk; 
     int tuple_len;
     bool ipv4;
+    bool udp;
+    bool tcp;
     int ret;
 
     if ((unsigned long)(eth + 1) > (unsigned long)data_end){
             return TC_ACT_SHOT;
 	}
 	//Determine if packet is part of UDP flow and get bpf_sock_tuple
-    tuple = get_tuple(data, sizeof(*eth), data_end, eth->h_proto, &ipv4);
+    tuple = get_tuple(data, sizeof(*eth), data_end, eth->h_proto, &ipv4, &udp, &tcp);
     if (!tuple){
         return TC_ACT_OK;
 	}
@@ -142,21 +155,27 @@ int bpf_sk_assign_test(struct __sk_buff *skb){
             if ((tproxy = get_tproxy(key))){
                 bpf_printk("prefix_len=0x%x",key.prefix_len);
                 bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
-                __u16 max_entries = tproxy->index_len;
+                bpf_printk("tcp_index_len=%x",tproxy->tcp_index_len);
+                bpf_printk("udp_index_len=%x",tproxy->udp_index_len);
+                __u16 max_entries = tproxy->udp_index_len;
                 if(max_entries > MAX_INDEX_ENTRIES){
                     max_entries = MAX_INDEX_ENTRIES;
                 }
                 for(int index=0; index < max_entries; index++){
-                    int key = tproxy->index_table[index];
-                    if(tproxy->udp_mapping[key].low_port){
-                        bpf_printk("udp_mapping->%d",bpf_ntohs(tproxy->udp_mapping[key].low_port));
-                        //bpf_printk("udp_mapping found");
-                        udp_mapping = tproxy->udp_mapping[key];
-                        //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].high_port);
-                        //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].tproxy_port);
-			            return TC_ACT_OK;
+                    int port_key = tproxy->udp_index_table[index];
+                    bpf_printk("index key=%d", bpf_ntohs(port_key));
+                    if(tproxy->udp_mapping[port_key].low_port){
+                        if(tproxy->udp_mapping[port_key].low_port == tuple->ipv4.dport){
+                            bpf_printk("udp_mapping->%d",bpf_ntohs(tproxy->udp_mapping[port_key].low_port));
+                            //bpf_printk("udp_mapping found");
+                            udp_mapping = tproxy->udp_mapping[port_key];
+                            //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].high_port);
+                            //bpf_printk("udp_mapping->%d",tproxy->udp_mapping[index].tproxy_port);
+                            return TC_ACT_OK;
+                        }
                     }
-                }  
+                }
+                return TC_ACT_SHOT;  
             }
             if(mask == 0x00ffffff){
                 exponent=16;
