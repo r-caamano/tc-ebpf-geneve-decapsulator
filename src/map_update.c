@@ -28,7 +28,7 @@
 #include <unistd.h>
 #include <linux/bpf.h>
 
-#define MAX_INDEX_ENTRIES  10
+#define MAX_INDEX_ENTRIES  25
 #define MAX_TABLE_SIZE  65536
 
 struct tproxy_tcp_port_mapping {
