@@ -1,10 +1,10 @@
 # Intro:
 
   This is a project to develop an ebpf program that 
-  utilizes tc-bpf to redirect ingress ipv4 udp flows toward specific
+  tc-bpf to redirect ingress ipv4 udp/tcp flows toward specific
   dynamically created sockets used by openziti edge-routers.
   Note: For this to work the ziti-router code had to be modified to not insert
-        an ip tables tproxy rule for the service defined for SIP.
+        ip tables tproxy rules for the services defined snd to instead call map_update/map_delete_elem for tproxy redirection.
 
   prereqs: Ubuntu 22.04 server
 
@@ -18,7 +18,7 @@
 
   compile:
 
-        clang -O2 -Wall -Wextra -target bpf -c -o redirect_udp.o redirect_udp.c
+        clang -O2 -Wall -Wextra -target bpf -c -o tproxy_splicer.o tproxy_splicer.c
         clang -O2 -Wall -Wextra -o map_update map_update.c
         clang -O2 -Wall -Wextra -o map_delete_elem map_delete_elem.c 
   
@@ -26,7 +26,7 @@
         
         sudo tc qdisc add dev <interface name>  clsact
 
-        sudo tc filter add dev <interface name> ingress bpf da obj redirect_udp.o sec sk_udp_redirect
+        sudo tc filter add dev <interface name> ingress bpf da obj tproxy_splicer.o sec sk_tproxy_splice
 
   detach:
 
