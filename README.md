@@ -34,23 +34,25 @@
 
   Example: Insert map entry to direct SIP traffic destined for 172.16.240.0/24
 
-        Usage: ./map_update <ip dest address or prefix> <prefix length> <dst_port> <src_port> <tproxy_port>
-        sudo ./map_update 172.16.240.0 24 5060 5060 58997 
+        Usage: ./map_update <ip dest address or prefix> <prefix length> <low_port> <high_port> <tproxy_port> <protocol id>
+        sudo ./map_update 172.16.240.0 24 5060 5060 58997 17 
  
   Example: Monitor ebpf trace messages
 
            sudo cat /sys/kernel/debug/tracing/trace_pipe
            
-           <idle>-0       [001] d.s.. 69289.977151: bpf_trace_printk: prefix_len=0x18
-           <idle>-0       [001] dNs.. 69289.977183: bpf_trace_printk: match on dest=ac10f000
-           <idle>-0       [001] dNs.. 69289.977184: bpf_trace_printk: match on dest_port=5060
-           <idle>-0       [001] dNs.. 69289.977184: bpf_trace_printk: match on tproxy_ip=7f000001
-           <idle>-0       [001] dNs.. 69289.977185: bpf_trace_printk: forwarding_to_tproxy_port=58997
-           <idle>-0       [001] dNs.. 69289.977187: bpf_trace_printk: Assigned
+           ziggy@ebpf-router:~$ sudo cat /sys/kernel/debug/tracing/trace_pipe
+           <idle>-0       [001] d.s.. 19039.327596: bpf_trace_printk: udp_tproxy_mapping->5060 to 54802
+           <idle>-0       [001] dNs.. 19043.309122: bpf_trace_printk: udp_tproxy_mapping->5060 to 54802
+           <idle>-0       [001] d.s.. 19043.736322: bpf_trace_printk: udp_tproxy_mapping->5060 to 54802
+           <idle>-0       [001] d.s.. 19058.701643: bpf_trace_printk: tcp_tproxy_mapping->39999 to 36921
+           <idle>-0       [001] d.s.. 19058.702262: bpf_trace_printk: tcp_tproxy_mapping->39999 to 36921
+            <...>-8526    [001] d.s.. 19058.702852: bpf_trace_printk: tcp_tproxy_mapping->39999 to 36921
+           <idle>-0       [001] d.s.. 19058.884039: bpf_trace_printk: tcp_tproxy_mapping->39999 to 36921
  
   Example: Remove prevoius entry from map
 
-        Usage: ./map_delete_elem <ip dest address or prefix> <prefix len>
-        sudo ./map_delete_elem 172.16.240.0 24
+        Usage: ./map_delete_elem <ip dest address or prefix> <prefix len> <low_port> <protocol id>
+        sudo ./map_delete_elem 172.16.240.0 24 5060 17
   
   
