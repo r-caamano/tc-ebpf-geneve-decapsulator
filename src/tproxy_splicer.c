@@ -162,6 +162,8 @@ int bpf_sk_splice(struct __sk_buff *skb){
     for (__u16 count = 0;count <= maxlen; count++){
             struct tproxy_key key = {(tuple->ipv4.daddr & mask), maxlen-count,0};
             if ((tproxy = get_tproxy(key))){
+                bpf_printk("udp_index_entries=%d",tproxy->udp_index_len);
+                bpf_printk("udp_index_entries=%d",tproxy->tcp_index_len);
                 if(udp) {
                     __u16 udp_max_entries = tproxy->udp_index_len;
                     if (udp_max_entries > MAX_INDEX_ENTRIES) {
@@ -170,7 +172,7 @@ int bpf_sk_splice(struct __sk_buff *skb){
                     for (int index = 0; index < udp_max_entries; index++) {
                         int port_key = tproxy->udp_index_table[index];
                         if ((bpf_ntohs(tuple->ipv4.dport) >= bpf_ntohs(tproxy->udp_mapping[port_key].low_port)) && (bpf_ntohs(tuple->ipv4.dport) <= bpf_ntohs(tproxy->udp_mapping[port_key].high_port))) {
-                            bpf_printk("udp_tproxy_mapping->%x", tproxy->udp_mapping[port_key].tproxy_ip);
+                            bpf_printk("udp_tproxy_mapping->%d", bpf_ntohs(tproxy->udp_mapping[port_key].tproxy_port));
                             sockcheck1.ipv4.daddr = tuple->ipv4.daddr;
                             sockcheck1.ipv4.saddr = tuple->ipv4.saddr;
                             sockcheck1.ipv4.dport = tuple->ipv4.dport;

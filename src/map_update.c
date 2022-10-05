@@ -261,12 +261,6 @@ int main(int argc, char **argv){
             printf("Unsupported Protocol\n");
             exit(1);
         }
-        /*if (orule.udp_mapping[index].low_port == index){
-            printf("udp_mapping[%d].low_port = %d\n", index,ntohs(orule.udp_mapping[index].low_port));
-        }
-        else{
-            printf("udp_mapping[5060] does not exist\n");
-        }*/
     }
     map.flags = BPF_ANY;
     int result = syscall(__NR_bpf, BPF_MAP_UPDATE_ELEM, &map, sizeof(map));
