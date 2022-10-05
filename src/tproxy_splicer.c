@@ -103,9 +103,8 @@ static struct bpf_sock_tuple *get_tuple(void *data, __u64 nh_off,
             *udp = true;    
         }else if(proto == IPPROTO_TCP){
             *tcp = true;
-        
-	}else{
-            return NULL;
+	    }else{
+             return NULL;
         }
         *ipv4 = true;
         result = (struct bpf_sock_tuple *)(void*)(long)&iph->saddr;
@@ -159,6 +158,28 @@ int bpf_sk_splice(struct __sk_buff *skb){
     else if(udp && (bpf_ntohs(tuple->ipv4.sport) == 67)){
         return TC_ACT_OK;
     }
+    if(tcp){
+       sk = bpf_skc_lookup_tcp(skb, tuple, tuple_len,BPF_F_CURRENT_NETNS, 0);
+       if(sk){
+            if (sk->state != BPF_TCP_LISTEN){
+                goto assign;
+            }
+            bpf_sk_release(sk);
+        }
+    }
+    if(udp){
+        //sockcheck1.ipv4.daddr = tuple->ipv4.daddr;
+        //sockcheck1.ipv4.saddr = tuple->ipv4.saddr;
+        //sockcheck1.ipv4.dport = tuple->ipv4.dport;
+        //sockcheck1.ipv4.sport = tuple->ipv4.sport;
+        sk = bpf_sk_lookup_udp(skb, tuple, sizeof(sockcheck1.ipv4), BPF_F_CURRENT_NETNS, 0);
+        if(sk){
+           if(sk->dst_ip4){
+                goto assign;
+           }
+           bpf_sk_release(sk);
+        }
+    }
     for (__u16 count = 0;count <= maxlen; count++){
             struct tproxy_key key = {(tuple->ipv4.daddr & mask), maxlen-count,0};
             if ((tproxy = get_tproxy(key))){
@@ -171,31 +192,13 @@ int bpf_sk_splice(struct __sk_buff *skb){
                         int port_key = tproxy->udp_index_table[index];
                         if ((bpf_ntohs(tuple->ipv4.dport) >= bpf_ntohs(tproxy->udp_mapping[port_key].low_port)) && (bpf_ntohs(tuple->ipv4.dport) <= bpf_ntohs(tproxy->udp_mapping[port_key].high_port))) {
                             bpf_printk("udp_tproxy_mapping->%d to %d", bpf_ntohs(tuple->ipv4.dport), bpf_ntohs(tproxy->udp_mapping[port_key].tproxy_port));
-                            sockcheck1.ipv4.daddr = tuple->ipv4.daddr;
-                            sockcheck1.ipv4.saddr = tuple->ipv4.saddr;
-                            sockcheck1.ipv4.dport = tuple->ipv4.dport;
-                            sockcheck1.ipv4.sport = tuple->ipv4.sport;
-                            sk = bpf_sk_lookup_udp(skb, &sockcheck1, sizeof(sockcheck1.ipv4), BPF_F_CURRENT_NETNS, 0);
-                            if ((sk) && (!sk->dst_ip4)){	
-                                bpf_sk_release(sk);
-                                sockcheck2.ipv4.daddr = tproxy->udp_mapping[port_key].tproxy_ip;
-                                sockcheck2.ipv4.dport = tproxy->udp_mapping[port_key].tproxy_port;
-                                sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
-                            }
-                            if(!sk){
-                                sockcheck2.ipv4.daddr = tproxy->udp_mapping[port_key].tproxy_ip;
-                                sockcheck2.ipv4.dport = tproxy->udp_mapping[port_key].tproxy_port;
-                                sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
-	                        }
+                            sockcheck2.ipv4.daddr = tproxy->udp_mapping[port_key].tproxy_ip;
+                            sockcheck2.ipv4.dport = tproxy->udp_mapping[port_key].tproxy_port;
+                            sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
 				            if(!sk){
                                 return TC_ACT_SHOT;
                             }
-                            ret = bpf_sk_assign(skb, sk, 0);
-                            bpf_sk_release(sk);
-                            if(ret == 0){
-                                return TC_ACT_OK;
-                            }
-                            return TC_ACT_SHOT;
+                            goto assign;
                         }
                     }
                 }else{
@@ -208,13 +211,6 @@ int bpf_sk_splice(struct __sk_buff *skb){
                         if (tproxy->tcp_mapping[port_key].low_port) {
                             if ((bpf_ntohs(tuple->ipv4.dport) >= bpf_ntohs(tproxy->tcp_mapping[port_key].low_port)) && (bpf_ntohs(tuple->ipv4.dport) <= bpf_ntohs(tproxy->tcp_mapping[port_key].high_port))) {
                                 bpf_printk("tcp_tproxy_mapping->%d to %d", bpf_ntohs(tuple->ipv4.dport), bpf_ntohs(tproxy->tcp_mapping[port_key].tproxy_port));
-                                sk = bpf_skc_lookup_tcp(skb, tuple, tuple_len,BPF_F_CURRENT_NETNS, 0);
-                                if(sk){
-                                    if (sk->state != BPF_TCP_LISTEN){
-                                        goto assign;
-                                    }
-                                    bpf_sk_release(sk);
-                                }
                 				sockcheck2.ipv4.daddr = tproxy->tcp_mapping[port_key].tproxy_ip;
                                 sockcheck2.ipv4.dport = tproxy->tcp_mapping[port_key].tproxy_port;
                                 sk = bpf_skc_lookup_tcp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
@@ -225,13 +221,7 @@ int bpf_sk_splice(struct __sk_buff *skb){
                                     bpf_sk_release(sk);
                                     return TC_ACT_SHOT;
                                 }
-                                assign:
-                                ret = bpf_sk_assign(skb, sk, 0);
-                                bpf_sk_release(sk);
-                                if(ret == 0){
-                                    return TC_ACT_OK;
-                                }
-                                return TC_ACT_SHOT;
+                                goto assign;
                             }
                         }
                     }
@@ -260,6 +250,13 @@ int bpf_sk_splice(struct __sk_buff *skb){
             }
             exponent++;
     } 
+    return TC_ACT_SHOT;
+    assign:
+    ret = bpf_sk_assign(skb, sk, 0);
+    bpf_sk_release(sk);
+    if(ret == 0){
+        return TC_ACT_OK;
+    }
     return TC_ACT_SHOT;
 }
 SEC("license") const char __license[] = "Dual BSD/GPL";
