@@ -1,7 +1,7 @@
 /*    Copyright (C) 2022  Robert Caamano   */
  /*
   *
-  *   This program inserts a rule into an existing pinned 
+  *   This program deletes a rule from an existing pinned 
   *   zt_tproxy_map hash table created by the redirect_udp
   *   program when attatched to an interface via tc
   *

@@ -1,8 +1,9 @@
 /*    Copyright (C) 2022  Robert Caamano   */
  /*
-  *   This program redirects udp packets that match specific destination prefixes & src/dst ports
+  *   This program splices tcp and udp flows via ebpf tc that match openzit service destination prefixes & dst ports
   *   to either openziti edge-router tproxy port or to a locally hosted openziti service socket
-  *   depending on whether there is an existing egress socket. 
+  *   completely replacing iptables rules.  It works with a modified openziti edge module that calls the binaries
+  *   in this repo.   
   *
   *   This program is free software: you can redistribute it and/or modify
   *   it under the terms of the GNU General Public License as published by
@@ -26,11 +27,12 @@
 #include <bpf/bpf_endian.h>
 #include <iproute2/bpf_elf.h>
 #include <stdbool.h>
-#include <linux/tcp.h>
+#include <linux/tcp.h>\
 
 #define BPF_MAP_ID_TPROXY  1
+#define BPF_MAP_ID_IFINDEX_IP  2
 #define BPF_MAX_ENTRIES    100 //MAX # PREFIXES
-#define MAX_INDEX_ENTRIES  25  //MAX port ranges per prefix need to match in User space apps 
+#define MAX_INDEX_ENTRIES  25 //MAX port ranges per prefix need to match in User space apps 
 #define MAX_TABLE_SIZE  65536
 
 struct tproxy_tcp_port_mapping {
@@ -64,22 +66,52 @@ struct tproxy_key {
     __u16 pad;
 };
 
+struct ifindex_ip4 {
+    __u32 ipaddr;
+    __u32 ifindex;
+};
+
+
+
+struct bpf_elf_map SEC("maps") ifindex_ip_map = {
+    .type = BPF_MAP_TYPE_ARRAY,
+    .id   = BPF_MAP_ID_IFINDEX_IP,
+    .size_key = sizeof(uint32_t),
+    .size_value = sizeof(struct ifindex_ip4),
+    .max_elem = 50,
+    .pinning  = PIN_GLOBAL_NS,
+}; 
+
 
 struct bpf_elf_map SEC("maps") zt_tproxy_map = {
     .type = BPF_MAP_TYPE_HASH,
     .id   = BPF_MAP_ID_TPROXY,
     .size_key = sizeof(struct tproxy_key),
-    .size_value =       sizeof(struct tproxy_tuple),
+    .size_value = sizeof(struct tproxy_tuple),
     .max_elem = BPF_MAX_ENTRIES,
     .pinning  = PIN_GLOBAL_NS,
 };
 
-
-static inline struct tproxy_tuple *get_tproxy(struct tproxy_key dst_ip){
+static inline struct tproxy_tuple *get_tproxy(struct tproxy_key key){
     struct tproxy_tuple *tu;
-    tu = bpf_map_lookup_elem(&zt_tproxy_map, &dst_ip);
+    tu = bpf_map_lookup_elem(&zt_tproxy_map, &key);
 	return tu;
 }
+
+static inline struct ifindex_ip4 *get_local_ip4(__u32 key){
+    struct ifindex_ip4 *ifip4;
+    ifip4 = bpf_map_lookup_elem(&ifindex_ip_map, &key);
+
+	return ifip4;
+}
+
+/*static inline void update_local_ip4(__u32 ifindex,__u32 key){
+    struct ifindex_ip4 *ifip4;
+    ifip4 = bpf_map_lookup_elem(&ifindex_ip_map, &key);
+    if(ifip4){
+        __sync_fetch_and_add(&ifip4->ifindex, ifindex);
+    }
+}*/
 
 static struct bpf_sock_tuple *get_tuple(void *data, __u64 nh_off,
                                         void *data_end, __u16 eth_proto,
@@ -142,21 +174,18 @@ int bpf_sk_splice(struct __sk_buff *skb){
 	__u32 exponent=24;
 	__u32 mask = 0xffffffff;
 	__u16 maxlen = 32;
-    if(tcp && (bpf_ntohs(tuple->ipv4.dport) == 22)){
-        return TC_ACT_OK;
-    }else if(tcp && (bpf_ntohs(tuple->ipv4.sport) == 80)){
-        return TC_ACT_OK;
-    }else if(tcp && (bpf_ntohs(tuple->ipv4.sport) == 443)){
-        return TC_ACT_OK;
-    }else if(tcp && (bpf_ntohs(tuple->ipv4.sport) == 6262)){
-        return TC_ACT_OK;
-    }else if(tcp && (bpf_ntohs(tuple->ipv4.sport) == 22)){
-        return TC_ACT_OK;
-    }else if(udp && (bpf_ntohs(tuple->ipv4.sport) == 53)){
-        return TC_ACT_OK;
+    struct ifindex_ip4 *local_ip4 = get_local_ip4(skb->ingress_ifindex);
+    if((local_ip4) && (local_ip4->ipaddr)){
+       if((tuple->ipv4.daddr == local_ip4->ipaddr) && (bpf_ntohs(tuple->ipv4.dport) == 22)){
+            return TC_ACT_OK;
+       }
+    }else{
+        if(tcp && (bpf_ntohs(tuple->ipv4.dport) == 22)){
+            return TC_ACT_OK;
+        }
     }
-    else if(udp && (bpf_ntohs(tuple->ipv4.sport) == 67)){
-        return TC_ACT_OK;
+    if(udp && (bpf_ntohs(tuple->ipv4.sport) == 67)){
+       return TC_ACT_OK;
     }
     if(tcp){
        sk = bpf_skc_lookup_tcp(skb, tuple, tuple_len,BPF_F_CURRENT_NETNS, 0);
@@ -168,11 +197,11 @@ int bpf_sk_splice(struct __sk_buff *skb){
         }
     }
     if(udp){
-        //sockcheck1.ipv4.daddr = tuple->ipv4.daddr;
-        //sockcheck1.ipv4.saddr = tuple->ipv4.saddr;
-        //sockcheck1.ipv4.dport = tuple->ipv4.dport;
-        //sockcheck1.ipv4.sport = tuple->ipv4.sport;
-        sk = bpf_sk_lookup_udp(skb, tuple, sizeof(sockcheck1.ipv4), BPF_F_CURRENT_NETNS, 0);
+        sockcheck1.ipv4.daddr = tuple->ipv4.daddr;
+        sockcheck1.ipv4.saddr = tuple->ipv4.saddr;
+        sockcheck1.ipv4.dport = tuple->ipv4.dport;
+        sockcheck1.ipv4.sport = tuple->ipv4.sport;
+        sk = bpf_sk_lookup_udp(skb, &sockcheck1, sizeof(sockcheck1.ipv4), BPF_F_CURRENT_NETNS, 0);
         if(sk){
            if(sk->dst_ip4){
                 goto assign;

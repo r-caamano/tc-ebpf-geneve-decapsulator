@@ -27,9 +27,29 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <linux/bpf.h>
+#include <ifaddrs.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <linux/ethtool.h>
+#include <sys/ioctl.h>
+#include <netinet/ip.h>
+#include <net/if.h>
+#include <linux/ethtool.h>
+#include <linux/sockios.h>
+#include <string.h>
+#include <errno.h>
+
+
 
 #define MAX_INDEX_ENTRIES  25
 #define MAX_TABLE_SIZE  65536
+
+
+
+struct ifindex_ip4 {
+    __u32 ipaddr;
+    __u32 ifindex;
+};
 
 struct tproxy_tcp_port_mapping {
     __u16 low_port;
@@ -61,6 +81,28 @@ struct tproxy_key {
 		   __u16  prefix_len;
            __u16  pad;
 };
+
+int get_index(char *name, int *idx)
+{
+    int             fd, result;
+    struct ifreq    irequest;
+
+    fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    if (fd == -1)
+        return errno;
+
+    strncpy(irequest.ifr_name, name, IF_NAMESIZE);
+    if (ioctl(fd, SIOCGIFINDEX, &irequest) == -1) {
+        do {
+            result = close(fd);
+        } while (result == -1 && errno == EINTR);
+        return errno = ENOENT;
+    }
+
+    *idx = irequest.ifr_ifindex;
+
+    return 0;
+}
 
 int32_t ip2l(char *ip){
     char *endPtr;
@@ -144,9 +186,7 @@ void add_udp_index(__u16 index, struct tproxy_udp_port_mapping *mapping, struct 
         }
     }
     if(is_new){
-        //printf("index=%d\n",ntohs(index));
         tuple->udp_index_table[tuple->udp_index_len] = index;
-        //printf("map_udp_index =%d\n", ntohs(tuple->udp_index_table[tuple->udp_index_len]));
         tuple->udp_index_len +=1;
     }
     memcpy((void *)&tuple->udp_mapping[index],(void *)mapping,sizeof(struct tproxy_udp_port_mapping));
@@ -167,13 +207,64 @@ void add_tcp_index(__u16 index, struct tproxy_tcp_port_mapping *mapping, struct 
 }
 
 int main(int argc, char **argv){
-    union bpf_attr map;
-    const char *path = "/sys/fs/bpf/tc/globals/zt_tproxy_map";
+    
     if (argc < 7) {
         fprintf(stderr, "Usage: %s <ip dest address or prefix> <prefix length> <dst_port> <src_port> <tproxy_port> <protocol id>\n", argv[0]);
         exit(0);
     }
+    union bpf_attr if_map;
+    const char *if_map_path = "/sys/fs/bpf/tc/globals/ifindex_ip_map";
     __u8 protocol = proto2u8(argv[6]);
+
+
+    
+    struct ifaddrs *addrs;
+
+    if(getifaddrs(&addrs)==-1){
+        printf("can't get addrs");
+        return -1;
+    }
+    struct ifaddrs *address = addrs;
+    memset(&if_map, 0, sizeof(if_map));
+    if_map.pathname = (uint64_t) if_map_path;
+    if_map.bpf_fd = 0;
+    if_map.file_flags = 0;
+    int if_fd = syscall(__NR_bpf, BPF_OBJ_GET, &if_map, sizeof(if_map));
+    if (if_fd == -1){
+	    printf("BPF_OBJ_GET: %s \n", strerror(errno));
+        exit(1);
+    }
+    if_map.map_fd = if_fd;
+    int idx=0;
+    while(address){
+        int family = address->ifa_addr->sa_family;
+        if(family == AF_INET){
+            if(strncmp(address->ifa_name,"lo",2)){
+                get_index(address->ifa_name,&idx);	
+                char ap[100];
+                const int family_size = sizeof(struct sockaddr_in);
+                getnameinfo(address->ifa_addr,family_size,ap,sizeof(ap),0,0,1);
+                struct ifindex_ip4 ifip4 = {
+                    htonl(ip2l(ap)),
+                    idx,
+                };          
+                if_map.key = (uint64_t)&idx;
+                if_map.flags = BPF_ANY;
+                if_map.value = (uint64_t)&ifip4;
+                int ret = syscall(__NR_bpf, BPF_MAP_UPDATE_ELEM, &if_map, sizeof(if_map));
+                if (ret){
+	                printf("MAP_UPDATE_ELEM: %s \n", strerror(errno));
+                    exit(1);
+                }
+            }
+        }
+        address = address->ifa_next;
+    }
+    close(if_fd);
+    freeifaddrs(addrs);
+    
+    union bpf_attr map;
+    const char *path = "/sys/fs/bpf/tc/globals/zt_tproxy_map";
     struct tproxy_key key = {htonl(ip2l(argv[1])), len2u16(argv[2]),0};
     struct tproxy_tuple orule;
     //Open BPF zt_tproxy_map map
@@ -183,7 +274,7 @@ int main(int argc, char **argv){
     map.file_flags = 0;
     int fd = syscall(__NR_bpf, BPF_OBJ_GET, &map, sizeof(map));
     if (fd == -1){
-	printf("BPF_OBJ_GET: %s \n", strerror(errno));
+	    printf("BPF_OBJ_GET: %s \n", strerror(errno));
         exit(1);
     }
     map.map_fd = fd;
