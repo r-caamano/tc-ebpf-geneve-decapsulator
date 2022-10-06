@@ -115,9 +115,19 @@ static inline struct ifindex_ip4 *get_local_ip4(__u32 key){
 
 static struct bpf_sock_tuple *get_tuple(void *data, __u64 nh_off,
                                         void *data_end, __u16 eth_proto,
-                                        bool *ipv4, bool *udp, bool *tcp){
+                                        bool *ipv4, bool *ipv6, bool *udp, bool *tcp, bool *arp){
     struct bpf_sock_tuple *result;
     __u8 proto = 0;
+    
+    if (eth_proto == bpf_htons(ETH_P_ARP)) {
+        *arp = true;
+        return NULL;
+    }
+
+    if (eth_proto == bpf_htons(ETH_P_ARP)) {
+        *ipv6 = true;
+        return NULL;
+    }
 
     if (eth_proto == bpf_htons(ETH_P_IP)) {
         struct iphdr *iph = (struct iphdr *)(data + nh_off);
@@ -155,16 +165,22 @@ int bpf_sk_splice(struct __sk_buff *skb){
     struct bpf_sock_tuple *tuple, sockcheck1 = {0}, sockcheck2 = {0};
     struct bpf_sock *sk; 
     int tuple_len;
-    bool ipv4;
+    bool ipv4 = false;
+    bool ipv6 = false;
     bool udp=false;
     bool tcp=false;
+    bool arp=false;
     int ret;
     if ((unsigned long)(eth + 1) > (unsigned long)data_end){
             return TC_ACT_SHOT;
 	}
-    tuple = get_tuple(data, sizeof(*eth), data_end, eth->h_proto, &ipv4, &udp, &tcp);
+    tuple = get_tuple(data, sizeof(*eth), data_end, eth->h_proto, &ipv4,&ipv6, &udp, &tcp, &arp);
     if (!tuple){
-        return TC_ACT_OK;
+        if(arp){
+           return TC_ACT_OK;
+        }else{
+           return TC_ACT_SHOT;
+        }
 	}
     tuple_len = sizeof(tuple->ipv4);
 	if ((unsigned long)tuple + tuple_len > (unsigned long)skb->data_end){
