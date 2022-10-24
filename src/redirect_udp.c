@@ -152,8 +152,6 @@ int bpf_sk_geneve(struct __sk_buff *skb)
     bool udp=false;
     bool tcp=false;
     bool arp=false;
-    bool local=false;
-    int ret;
 
     /* find ethernet header from skb->data pointer */
     struct ethhdr *eth = (struct ethhdr *)(unsigned long)(skb->data);
@@ -185,5 +183,6 @@ int bpf_sk_geneve(struct __sk_buff *skb)
         return TC_ACT_OK;
     }
 
+    return BPF_OK;
 }
 SEC("license") const char __license[] = "Dual BSD/GPL";
