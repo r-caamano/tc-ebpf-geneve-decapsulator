@@ -1,10 +1,6 @@
-# Intro:  ### Work on this has moved to https://github.com/r-caamano/ebpf-tproxy-splicer which has added functionality###
-
   This is a project to develop an ebpf program that 
-  utilizes tc-bpf to redirect ingress ipv4 udp flows toward specific
-  dynamically created sockets used by openziti edge-routers.
-  Note: For this to work the ziti-router code had to be modified to not insert
-        an ip tables tproxy rule for the service defined for SIP.
+  utilizes tc-bpf to strip UDP Outter Header on ingress ipv4 udp flows 
+  if the geneve header is detected.
 
   prereqs: Ubuntu 22.04 server
 
@@ -19,8 +15,6 @@
   compile:
 
         clang -O2 -Wall -Wextra -target bpf -c -o redirect_udp.o redirect_udp.c
-        clang -O2 -Wall -Wextra -o map_update map_update.c
-        clang -O2 -Wall -Wextra -o map_delete_elem map_delete_elem.c 
   
   attach:
         
@@ -31,11 +25,6 @@
   detach:
 
         sudo tc qdisc del dev <interface name>  clsact
-
-  Example: Insert map entry to direct SIP traffic destined for 172.16.240.0/24
-
-        Usage: ./map_update <ip dest address or prefix> <prefix length> <dst_port> <src_port> <tproxy_port>
-        sudo ./map_update 172.16.240.0 24 5060 5060 58997 
  
   Example: Monitor ebpf trace messages
 
@@ -47,10 +36,6 @@
            <idle>-0       [001] dNs.. 69289.977184: bpf_trace_printk: match on tproxy_ip=7f000001
            <idle>-0       [001] dNs.. 69289.977185: bpf_trace_printk: forwarding_to_tproxy_port=58997
            <idle>-0       [001] dNs.. 69289.977187: bpf_trace_printk: Assigned
- 
-  Example: Remove prevoius entry from map
 
-        Usage: ./map_delete_elem <ip dest address or prefix> <prefix len>
-        sudo ./map_delete_elem 172.16.240.0 24
   
   
