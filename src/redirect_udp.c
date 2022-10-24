@@ -20,76 +20,122 @@
 #include <linux/if_ether.h>
 #include <linux/in.h>
 #include <linux/ip.h>
+#include <linux/udp.h>
 #include <linux/pkt_cls.h>
 #include <bcc/bcc_common.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 #include <iproute2/bpf_elf.h>
 
+#define GENEVE_UDP_PORT         6081
+#define GENEVE_VER              0
+#define AWS_GNV_HDR_OPT_LEN     32 // Bytes
+#define AWS_GNV_HDR_LEN         40 // Bytes
 
-struct tproxy_tuple {
-    __u32 dst_ip;
-	__u32 src_ip;
-	__u32 tproxy_ip;
-	__u16 dst_port;
-	__u16 src_port;
-	__u16 tproxy_port;
-};
-struct tproxy_key {
-    __u32 dst_ip;
-    __u16 prefix_len;
-    __u16 pad; 
-
-};
-
-
-
-#define BPF_MAP_ID_TPROXY  1
-#define BPF_MAX_ENTRIES    100
-
-//struct representing tproxy mapping (pinned to fs)
-struct bpf_elf_map SEC("maps") zt_tproxy_map = {
-    .type = BPF_MAP_TYPE_HASH,
-    .id   = BPF_MAP_ID_TPROXY,
-    .size_key = sizeof(struct tproxy_key),
-    .size_value =       sizeof(struct tproxy_tuple),
-    .max_elem = BPF_MAX_ENTRIES,
-    .pinning  = PIN_GLOBAL_NS,
-};
-
-//function for accessing tproxy map from kernel space
-static inline struct tproxy_tuple *get_tproxy(struct tproxy_key dst_ip){
-    struct tproxy_tuple *tu;
-    tu = bpf_map_lookup_elem(&zt_tproxy_map, &dst_ip);
-	return tu;
-}
-
-// Function to check if packet contains udp tuple and returns the tuple
-static struct bpf_sock_tuple *get_tuple(void *data, __u64 nh_off,
-                                        void *data_end, __u16 eth_proto,
-                                        bool *ipv4){
+/* function to determine if an incomming packet is a udp/tcp IP tuple
+* or not.  If not returns NULL.  If true returns a struct bpf_sock_tuple
+* from the combined IP SA|DA and the TCP/UDP SP|DP. 
+*/
+static struct bpf_sock_tuple *get_tuple(struct __sk_buff *skb, __u64 nh_off,
+    __u16 eth_proto, bool *ipv4, bool *ipv6, bool *udp, bool *tcp, bool *arp){
     struct bpf_sock_tuple *result;
     __u8 proto = 0;
-
+    int ret;
+    
+    /* check if ARP */
+    if (eth_proto == bpf_htons(ETH_P_ARP)) {
+        *arp = true;
+        return NULL;
+    }
+    
+    /* check if IPv6 */
+    if (eth_proto == bpf_htons(ETH_P_IPV6)) {
+        *ipv6 = true;
+        return NULL;
+    }
+    
+    /* check IPv4 */
     if (eth_proto == bpf_htons(ETH_P_IP)) {
-        struct iphdr *iph = (struct iphdr *)(data + nh_off);
+        *ipv4 = true;
 
-        if ((unsigned long)(iph + 1) > (unsigned long)data_end){
+        /* find ip hdr */
+        struct iphdr *iph = (struct iphdr *)(skb->data + nh_off);
+        
+        /* ensure ip header is in packet bounds */
+        if ((unsigned long)(iph + 1) > (unsigned long)skb->data_end){
             bpf_printk("header too big");
             return NULL;
 		}
+        /* ip options not allowed */
         if (iph->ihl != 5){
 		    bpf_printk("no options allowed");
             return NULL;
-		}
+        }
+        /* get ip protocol type */
         proto = iph->protocol;
-        *ipv4 = true;
+        /* check if ip protocol is UDP */
+        if (proto == IPPROTO_UDP) {
+            /* check outter ip header */
+            struct udphdr *udph = (struct udphdr *)(skb->data + nh_off + sizeof(struct iphdr));
+            if ((unsigned long)(udph + 1) > (unsigned long)skb->data_end){
+                bpf_printk("udp header is too big");
+                return NULL;
+            }
+
+            /* If geneve port 6081, then do geneve header verification */
+            if (bpf_ntohs(udph->dest) == GENEVE_UDP_PORT){
+                //bpf_printk("GENEVE MATCH FOUND ON DPORT = %d", bpf_ntohs(udph->dest));
+                //bpf_printk("UDP PAYLOAD LENGTH = %d", bpf_ntohs(udph->len));
+
+                /* read receive geneve version and header length */
+                __u8 *genhdr = (void *)(unsigned long)(skb->data + nh_off + sizeof(struct iphdr) + sizeof(struct udphdr));
+                if ((unsigned long)(genhdr + 1) > (unsigned long)skb->data_end){
+                    bpf_printk("geneve header is too big");
+                    return NULL;
+                }
+                int gen_ver  = genhdr[0] & 0xC0 >> 6;
+                int gen_hdr_len = genhdr[0] & 0x3F;
+                //bpf_printk("Received Geneve version is %d", gen_ver);
+                //bpf_printk("Received Geneve header length is %d bytes", gen_hdr_len * 4);
+
+                /* if the length is not equal to 32 bytes and version 0 */
+                if ((gen_hdr_len != AWS_GNV_HDR_OPT_LEN / 4) || (gen_ver != GENEVE_VER)){
+                    //bpf_printk("Geneve header length:version error %d:%d", gen_hdr_len * 4, gen_ver);
+                    return NULL;
+                }
+
+                /* Updating the skb to pop geneve header */
+                //bpf_printk("SKB DATA LENGTH =%d", skb->len);
+                ret = bpf_skb_adjust_room(skb, -68, BPF_ADJ_ROOM_MAC, 0);
+                if (ret) {
+                    //bpf_printk("error calling skb adjust room.");
+                    return NULL;
+                }
+                //bpf_printk("SKB DATA LENGTH AFTER=%d", skb->len);
+                /* Initialize iph for after popping outer */
+                iph = (struct iphdr *)(skb->data + nh_off);
+                if((unsigned long)(iph + 1) > (unsigned long)skb->data_end){
+                    //bpf_printk("header too big");
+                    return NULL;
+                }
+                proto = iph->protocol;
+                //bpf_printk("INNER Protocol = %d", proto);
+            }
+            /* set udp to true if inner is udp, and let all other inner protos to the next check point */
+            if (proto == IPPROTO_UDP) {
+                *udp = true;
+            }
+        }
+        /* check if ip protocol is TCP */
+        if (proto == IPPROTO_TCP) {
+            *tcp = true;
+        }/* check if ip protocol is not UDP and not TCP to return NULL */
+        if ((proto != IPPROTO_UDP) && (proto != IPPROTO_TCP)) {
+            return NULL;
+        }
+        /*return bpf_sock_tuple*/
         result = (struct bpf_sock_tuple *)(void*)(long)&iph->saddr;
     } else {
-        return NULL;
-    }
-
-    if (((unsigned long)result + 1 > (unsigned long)data_end )|| (proto != IPPROTO_UDP)){
         return NULL;
     }
     return result;
@@ -97,109 +143,47 @@ static struct bpf_sock_tuple *get_tuple(void *data, __u64 nh_off,
 
 //ebpf tc code
 SEC("sk_udp_redirect")
-int bpf_sk_assign_test(struct __sk_buff *skb)
+int bpf_sk_geneve(struct __sk_buff *skb)
 {
-        void *data_end = (void *)(long)skb->data_end;
-        void *data = (void *)(long)skb->data;
-        struct ethhdr *eth = (struct ethhdr *)(data);
-        struct bpf_sock_tuple *tuple, sockcheck1 = {0}, sockcheck2 = {0};
-        struct bpf_sock *sk; 
-        int tuple_len;
-        bool ipv4;
-        int ret;
+    struct bpf_sock_tuple *tuple;
+    int tuple_len;
+    bool ipv4 = false;
+    bool ipv6 = false;
+    bool udp=false;
+    bool tcp=false;
+    bool arp=false;
+    bool local=false;
+    int ret;
 
-        if ((unsigned long)(eth + 1) > (unsigned long)data_end){
+    /* find ethernet header from skb->data pointer */
+    struct ethhdr *eth = (struct ethhdr *)(unsigned long)(skb->data);
+    /* verify its a valid eth header within the packet bounds */
+    if ((unsigned long)(eth + 1) > (unsigned long)skb->data_end){
             return TC_ACT_SHOT;
 	}
-	//Determine if packet is part of UDP flow and get bpf_sock_tuple
-        tuple = get_tuple(data, sizeof(*eth), data_end, eth->h_proto, &ipv4);
-        if (!tuple){
-            return TC_ACT_OK;
-	}
+
+    /* check if incomming packet is a UDP or TCP tuple */
+    tuple = get_tuple(skb, sizeof(*eth), eth->h_proto, &ipv4,&ipv6, &udp, &tcp, &arp);
+    
+    /* if not tuple forward all other traffic */
+    if (!tuple){
+        return TC_ACT_OK;
+    }
+    /* determine length of tupple */
     tuple_len = sizeof(tuple->ipv4);
 	if ((unsigned long)tuple + tuple_len > (unsigned long)skb->data_end){
 	    return TC_ACT_SHOT;
 	}
-	struct tproxy_tuple *tproxy;
-	__u32 exponent=24;
-	__u32 mask = 0xffffffff;
-	__u16 maxlen = 32;
-	for (__u16 count = 0;count <= maxlen; count++){
-            struct tproxy_key key = {(tuple->ipv4.daddr & mask), maxlen-count,0};
-            if ((tproxy = get_tproxy(key))){
-                bpf_printk("prefix_len=0x%x",key.prefix_len);
-                bpf_printk("match on dest=%x",bpf_ntohl(tproxy->dst_ip));
-                bpf_printk("match on dest_port=%d",bpf_ntohs(tproxy->dst_port));
-                bpf_printk("match on tproxy_ip=%x",bpf_ntohl(tproxy->tproxy_ip));
-                bpf_printk("forwarding_to_tproxy_port=%d",bpf_ntohs(tproxy->tproxy_port));
-		        break;
-            }
-            if(mask == 0x00ffffff){
-                exponent=16;
-            }
-            if(mask == 0x0000ffff){
-                exponent=8;
-            }
-            if(mask == 0x000000ff){
-                exponent=0;
-            }
-            if(mask == 0x00000080){
-                bpf_printk("*** NO MATCH FOUND ON DEST=%x\n", bpf_ntohl(tuple->ipv4.daddr));
-                return TC_ACT_OK;
-            }
-            if((mask >= 0x80ffffff) && (exponent >= 24)){
-                mask = mask - (1 << exponent);
-            }else if((mask >= 0x0080ffff) && (exponent >= 16)){
-                mask = mask - (1 << exponent);
-            }else if((mask >= 0x000080ff) && (exponent >= 8)){
-                    mask = mask - (1 << exponent);
-            }else if((mask >= 0x00000080) && (exponent >= 0)){
-                mask = mask - (1 << exponent);
-            }
-            exponent++;
+    /* if tcp based tuple, let it pass
+     */
+    if(tcp){
+       return TC_ACT_OK;
     }
-    if(!tproxy){
+    /* if udp based tuple, let it pass
+     */
+    if(udp){
         return TC_ACT_OK;
     }
-    //match ingress packet dst port
-    if (tuple->ipv4.dport == tproxy->dst_port){
-	    //tuple to look for egress socket
-        sockcheck1.ipv4.daddr = tuple->ipv4.daddr;
-        sockcheck1.ipv4.saddr = tuple->ipv4.saddr;
-        sockcheck1.ipv4.dport = tproxy->dst_port;
-        sockcheck1.ipv4.sport = tproxy->src_port;
-        sk = bpf_sk_lookup_udp(skb, &sockcheck1, sizeof(sockcheck1.ipv4),BPF_F_CURRENT_NETNS, 0);
-	    //tuple to seach for tproxy
-	    /*if sk exists but does not have dst_address must be reverse ingress(intercept egress) socket
-	    so we need to lookup tproxy instead after releasing*/ 
-        if((sk) && (!sk->dst_ip4)){
-	        bpf_sk_release(sk);
-	        sockcheck2.ipv4.daddr = tproxy->tproxy_ip;
-            sockcheck2.ipv4.dport = tproxy->tproxy_port;
-	        sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
-	    }
-	    //no sk found so we again need to lookup tproxy
-	    if(!sk){
-	       //tuple to seach for tproxy
-            sockcheck2.ipv4.daddr = tproxy->tproxy_ip;
-            sockcheck2.ipv4.dport = tproxy->tproxy_port;
-	        sk = bpf_sk_lookup_udp(skb, &sockcheck2, sizeof(sockcheck2.ipv4),BPF_F_CURRENT_NETNS, 0);
-	    }
-	    if(!sk){
-	       bpf_printk("No Sockets Found!");
-	       return TC_ACT_SHOT;
-	    }
-        ret = bpf_sk_assign(skb, sk, 0);
-	    bpf_sk_release(sk);
-	    if(ret == 0){
-	        bpf_printk("Assigned");
-	        return TC_ACT_OK;
-	    }else{
-	        bpf_printk("failed");
-	        return TC_ACT_SHOT;
-	    }
-    }
-    return TC_ACT_OK;
 
 }
 SEC("license") const char __license[] = "Dual BSD/GPL";
