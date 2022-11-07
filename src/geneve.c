@@ -77,10 +77,10 @@ int geneve(struct __sk_buff *skb) {
                 return BPF_OK;
             }
 
-            __s32 adjust =  -68
+            __s32 adjust_size = -68;
 
             /* Updating the skb to pop geneve header */
-            ret = bpf_skb_adjust_room(skb, adjust, BPF_ADJ_ROOM_MAC, 0);
+            ret = bpf_skb_adjust_room(skb, adjust_size, BPF_ADJ_ROOM_MAC, 0);
             if (ret) {
                 bpf_printk("Error - Calling skb adjust room helper function.");
                 return BPF_DROP;
