@@ -75,7 +75,7 @@ int geneve(struct __sk_buff *skb) {
                 bpf_printk("Error - Geneve header length:version %d:%d", gen_hdr_len * 4, gen_ver);
                 return BPF_OK;
             }
-            __s32 adjust_size = -(sizeof(struct iphdr) + sizeof(struct udphdr) + AWS_GNV_HDR_LEN);
+            __s32 adjust_size = -(signed long)(sizeof(struct iphdr) + sizeof(struct udphdr) + AWS_GNV_HDR_LEN);
             /* Updating the skb to pop geneve header */
             ret = bpf_skb_adjust_room(skb, adjust_size, BPF_ADJ_ROOM_MAC, 0);
             if (ret) {
