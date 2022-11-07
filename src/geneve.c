@@ -69,16 +69,13 @@ int geneve(struct __sk_buff *skb) {
             }
             int gen_ver  = genhdr[0] & 0xC0 >> 6;
             int gen_hdr_len = genhdr[0] & 0x3F;
-            bpf_printk("Ok - Geneve header length:version %d:%d", gen_hdr_len * 4, gen_ver);
-
+            bpf_printk("Read - Geneve header length:version %d:%d", gen_hdr_len * 4, gen_ver);
             /* if the length is not equal to 32 bytes and version 0 */
             if ((gen_hdr_len != AWS_GNV_HDR_OPT_LEN / 4) || (gen_ver != GENEVE_VER)){
                 bpf_printk("Error - Geneve header length:version %d:%d", gen_hdr_len * 4, gen_ver);
                 return BPF_OK;
             }
-
-            __s32 adjust_size = -68;
-
+            __s32 adjust_size = -(sizeof(struct iphdr) + sizeof(struct udphdr) + AWS_GNV_HDR_LEN);
             /* Updating the skb to pop geneve header */
             ret = bpf_skb_adjust_room(skb, adjust_size, BPF_ADJ_ROOM_MAC, 0);
             if (ret) {
