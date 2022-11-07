@@ -1,0 +1,54 @@
+---
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        goos: [linux]
+        goarch: [amd64]
+    steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v3
+          
+      - name: Install Packages and create object file
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc clang libc6-dev-i386 libbpfcc-dev libbpf-dev linux-tools-common
+          clang -O2 -Wall -Wextra -target bpf -c -o geneve.o geneve.c
+
+      - name: Tar files
+        run: tar -zcvf geneve.tar.gz geneve.o
+
+      - name: Upload a Build Artifact for testing
+        if: startsWith(github.ref, 'refs/heads/master') == false
+        uses: actions/upload-artifact@v3.1.0
+        with:
+          name: geneve
+          path: geneve.tar.gz
+
+      - name: release
+        if: startsWith(github.ref, 'refs/heads/release-v')
+        uses: actions/create-release@v1
+        id: release
+        with:
+          draft: false
+          prerelease: false
+          release_name: v0.1.0
+          tag_name: v0.1.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload a Build Artifact for release
+        if: startsWith(github.ref, 'refs/heads/release-v')
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.release.outputs.upload_url }}
+          asset_path: geneve.tar.gz
+          asset_name: geneve.tar.gz
+          asset_content_type: application/gzip

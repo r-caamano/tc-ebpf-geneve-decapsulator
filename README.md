@@ -10,8 +10,9 @@
 
            sudo reboot
 
-           sudo apt install -y gcc clang libc6-dev-i386 libbpfcc-dev libbpf-dev
+           sudo apt install -y gcc clang libc6-dev-i386 libbpfcc-dev libbpf-dev linux-tools-common
 
+           aws specific tools package - ```linux-tools-aws```
   compile:
 
         clang -O2 -Wall -Wextra -target bpf -c -o redirect_udp.o redirect_udp.c
