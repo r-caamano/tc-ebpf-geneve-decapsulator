@@ -65,7 +65,7 @@ int geneve(struct __sk_buff *skb) {
             __u8 *genhdr = (void *)(unsigned long)(skb->data + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr));
             if ((unsigned long)(genhdr + 1) > (unsigned long)skb->data_end){
                 bpf_printk("Geneve Header is invalid");
-                return BPF_DROP
+                return BPF_DROP;
             }
             int gen_ver  = genhdr[0] & 0xC0 >> 6;
             int gen_hdr_len = genhdr[0] & 0x3F;
