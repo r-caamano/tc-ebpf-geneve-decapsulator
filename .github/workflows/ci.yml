@@ -32,38 +32,3 @@ jobs:
         with:
           name: geneve
           path: geneve.tar.gz
-
-      - name: Get the version if release branch
-        if: startsWith(github.ref, 'refs/heads/release-v')
-        run: echo "TAG=`echo ${GITHUB_REF#refs/*/} | awk  -F '-' '{print $2}'`" >> $GITHUB_ENV
-        env:
-          version:  
-
-      - name: Print TAG to check release
-        if: startsWith(github.ref, 'refs/heads/release-v')
-        run: |
-          echo $TAG
-          echo ${{ env.TAG }}
-
-      - name: Create release
-        if: startsWith(github.ref, 'refs/heads/release-v')
-        uses: actions/create-release@v1
-        id: release
-        with:
-          draft: false
-          prerelease: false
-          release_name: ${{ env.TAG }}
-          tag_name: ${{ env.TAG }}
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-
-      - name: Upload a built artifact for release
-        if: startsWith(github.ref, 'refs/heads/release-v')
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          upload_url: ${{ steps.release.outputs.upload_url }}
-          asset_path: geneve.tar.gz
-          asset_name: geneve.tar.gz
-          asset_content_type: application/gzip
