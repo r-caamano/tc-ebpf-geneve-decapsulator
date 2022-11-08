@@ -35,7 +35,7 @@ jobs:
 
       - name: Get the version
         if: startsWith(github.ref, 'refs/heads/release-v')
-        run: echo "TAG=${GITHUB_REF#refs/*/}" | awk  -F "-" '{print $2}' >> $GITHUB_ENV
+        run: echo "TAG=${GITHUB_REF#refs/*/} | awk  -F '-' '{print $2}'" >> $GITHUB_ENV
 
       - name: Print TAG
         if: startsWith(github.ref, 'refs/heads/release-v')
