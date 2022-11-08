@@ -41,7 +41,7 @@ jobs:
         if: startsWith(github.ref, 'refs/heads/release-v')
         run: |
           echo $TAG
-          echo ${{ env.TAG | "\-(.*)" }} | awk  -F "-" '{print $2}'
+          echo ${{ env.TAG }}
 
       - name: release
         if: startsWith(github.ref, 'refs/heads/release-v')
