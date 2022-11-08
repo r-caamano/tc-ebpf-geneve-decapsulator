@@ -10,17 +10,18 @@
 
            sudo reboot
 
-           sudo apt install -y gcc clang libc6-dev-i386 libbpfcc-dev libbpf-dev
+           sudo apt install -y gcc clang libc6-dev-i386 libbpfcc-dev libbpf-dev linux-tools-common
 
+           aws specific tools package - ```linux-tools-aws```
   compile:
 
-        clang -O2 -Wall -Wextra -target bpf -c -o redirect_udp.o redirect_udp.c
+        clang -O2 -Wall -Wextra -target bpf -c -o geneve.o geneve.c
   
   attach:
         
         sudo tc qdisc add dev <interface name>  clsact
 
-        sudo tc filter add dev <interface name> ingress bpf da obj redirect_udp.o sec sk_udp_redirect
+        sudo tc filter add dev <interface name> ingress bpf da obj geneve.o sec sk_skb
 
   detach:
 
