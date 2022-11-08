@@ -35,8 +35,7 @@ jobs:
 
       - name: Get the version
         if: startsWith(github.ref, 'refs/heads/release-v')
-        id: get_version
-        run: echo "TAG=`echo $(git describe --tags --abbrev=0)`" >> $GITHUB_ENV
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
 
       - name: Print TAG
         if: startsWith(github.ref, 'refs/heads/release-v')
