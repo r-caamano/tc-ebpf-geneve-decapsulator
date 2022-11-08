@@ -36,7 +36,13 @@ jobs:
       - name: Get the version
         if: startsWith(github.ref, 'refs/heads/release-v')
         id: get_version
-        run: echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
+        run: echo "TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Print TAG
+        if: startsWith(github.ref, 'refs/heads/release-v')
+        run: |
+          echo $TAG
+          echo ${{ env.TAG }}
 
       - name: release
         if: startsWith(github.ref, 'refs/heads/release-v')
@@ -45,8 +51,8 @@ jobs:
         with:
           draft: false
           prerelease: false
-          release_name: ${{ steps.get_version.VERSION }}
-          tag_name: ${{ steps.get_version.VERSION }}
+          release_name: ${{ env.TAG }}
+          tag_name: ${{ env.TAG }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
