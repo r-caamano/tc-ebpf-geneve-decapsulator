@@ -83,7 +83,6 @@ int geneve(struct __sk_buff *skb) {
                 return BPF_DROP;
             }
         }
-
     }
     return BPF_OK;
 }
