@@ -19,7 +19,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y gcc clang libc6-dev-i386 libbpfcc-dev libbpf-dev linux-tools-common
 
-      - name: Compile an object C file
+      - name: Compile C Object file
         run: |
           clang -O2 -Wall -Wextra -target bpf -c -o geneve.o src/geneve.c
 
@@ -27,11 +27,16 @@ jobs:
         run: tar -zcvf geneve.tar.gz geneve.o
 
       - name: Upload a Build Artifact for testing
-        if: startsWith(github.ref, 'refs/heads/master') == false
+        if: startsWith(github.ref, 'refs/heads/main') == false
         uses: actions/upload-artifact@v3.1.0
         with:
           name: geneve
           path: geneve.tar.gz
+
+      - name: Get the version
+        if: startsWith(github.ref, 'refs/heads/release-v')
+        id: get_version
+        run: echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
 
       - name: release
         if: startsWith(github.ref, 'refs/heads/release-v')
@@ -40,8 +45,8 @@ jobs:
         with:
           draft: false
           prerelease: false
-          release_name: v0.1.0
-          tag_name: v0.1.0
+          release_name: ${{ steps.get_version.VERSION }}
+          tag_name: ${{ steps.get_version.VERSION }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
