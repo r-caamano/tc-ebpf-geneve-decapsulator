@@ -2,11 +2,9 @@
 name: release
 
 on:
-  pull_request_target:
-    types:
-      - closed
-    branches:
-      - release-v*
+  pull_request:
+    types: [closed]
+    branches: ['release-v*']
 
 jobs:
   if_merged:
@@ -32,10 +30,8 @@ jobs:
       - name: Tar Object File
         run: tar -zcvf geneve.tar.gz geneve.o
 
-      - name: Get the version if release branch
+      - name: Get the version
         run: echo "TAG=`echo ${GITHUB_REF#refs/*/} | awk  -F '-' '{print $2}'`" >> $GITHUB_ENV
-        env:
-          version:  
 
       - name: Print TAG to check release
         run: |
