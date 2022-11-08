@@ -34,7 +34,7 @@ jobs:
           path: geneve.tar.gz
 
       - name: Get the version
-        if: startsWith(github.ref, 'refs/heads/release-v')
+        if: startsWith(github.ref, 'refs/tags/v')
         run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
 
       - name: Print TAG
