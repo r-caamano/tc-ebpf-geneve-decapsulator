@@ -1,13 +1,16 @@
 ---
 name: release
 
-on: 
-  merge:
+on:
+  pull_request_target:
+    types:
+      - closed
     branches:
       - release-v*
 
 jobs:
-  build:
+  if_merged:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-22.04
     strategy:
       matrix:
