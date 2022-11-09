@@ -1,13 +1,11 @@
 ---
 name: release
 
-on:
-  pull_request:
-    branches: 
-      - '**release/**'
+on: [pull_request]
 
-jobs:
+jobs: 
   build_release:
+    if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-22.04
     strategy:
       matrix:
