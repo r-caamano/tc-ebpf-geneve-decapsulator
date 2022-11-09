@@ -3,7 +3,8 @@ name: release
 
 on:
   pull_request:
-    branches: ['release-v*']
+    branches: 
+      - 'release-v**'
 
 jobs:
   build_release:
