@@ -5,7 +5,6 @@ on: [pull_request]
 
 jobs: 
   build_release:
-    if: startsWith(github.ref, 'refs/heads/release')
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -36,6 +35,7 @@ jobs:
           echo ${{ env.TAG }}
 
       - name: Create release
+        if: startsWith(github.ref, 'refs/heads/release')
         uses: actions/create-release@v1
         id: release
         with:
@@ -47,6 +47,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
       - name: Upload a built artifact for release
+      if: startsWith(github.ref, 'refs/heads/release')
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ github.token }}
