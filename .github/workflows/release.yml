@@ -3,12 +3,10 @@ name: release
 
 on:
   pull_request:
-    types: [closed]
-    branches: ['release-v*']
+    types: [ready_for_review]
 
-jobs:
-  if_merged:
-    if: github.event.pull_request.merged == true
+jobs: 
+  build_release:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -30,13 +28,9 @@ jobs:
       - name: Tar Object File
         run: tar -zcvf geneve.tar.gz geneve.o
 
-      - name: Get the version
-        run: echo "TAG=`echo ${GITHUB_REF#refs/*/} | awk  -F '-' '{print $2}'`" >> $GITHUB_ENV
-
-      - name: Print TAG to check release
-        run: |
-          echo $TAG
-          echo ${{ env.TAG }}
+      - name: Get version
+        run: echo "version=`cat src/release.json | jq -r .version`" >> $GITHUB_OUTPUT
+        id: version
 
       - name: Create release
         uses: actions/create-release@v1
@@ -44,8 +38,8 @@ jobs:
         with:
           draft: false
           prerelease: false
-          release_name: ${{ env.TAG }}
-          tag_name: ${{ env.TAG }}
+          release_name: v${{ steps.version.outputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
