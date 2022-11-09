@@ -3,6 +3,8 @@ name: release
 
 on:
   pull_request:
+    types: 
+      - opened
     branches: 
       - 'release-v**'
 
