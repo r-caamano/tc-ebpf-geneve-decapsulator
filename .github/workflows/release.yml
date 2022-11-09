@@ -29,7 +29,7 @@ jobs:
         run: tar -zcvf geneve.tar.gz geneve.o
 
       - name: Get version
-        run: echo "version=`cat src/release.json | jq -r .version`"
+        run: echo "version=`cat src/release.json | jq -r .version`" >> $GITHUB_OUTPUT
         id: version
 
       - name: Create release
