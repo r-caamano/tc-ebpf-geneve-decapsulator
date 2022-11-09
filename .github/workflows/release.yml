@@ -3,12 +3,11 @@ name: release
 
 on:
   pull_request:
-    types: [closed]
-    branches: ['release-v*']
+    types: [ready_for_review]
 
 jobs:
-  if_merged:
-    if: github.event.pull_request.merged == true
+  build_release:
+    if: startsWith(github.ref, 'refs/heads/release-v')
     runs-on: ubuntu-22.04
     strategy:
       matrix:
