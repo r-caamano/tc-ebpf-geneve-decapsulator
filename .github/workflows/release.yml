@@ -1,9 +1,7 @@
 ---
 name: release
 
-on:
-  pull_request:
-    types: [opened]
+on: [pull_request]
     branches: ['release-v*']
 
 jobs:
