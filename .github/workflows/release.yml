@@ -28,8 +28,8 @@ jobs:
       - name: Tar Object File
         run: tar -zcvf geneve.tar.gz geneve.o
 
-      - name: version
-        run: cat src/release.json | jq -r .version
+      - name: Get version
+        run:  echo "::set-output name=version::$(`cat src/release.json | jq -r .version`)"
         id: version
 
       - name: Create release
