@@ -1,7 +1,9 @@
 ---
 name: release
 
-on: [pull_request]
+on:
+  pull_request:
+    types: [ready_for_review]
 
 jobs: 
   build_release:
@@ -26,13 +28,9 @@ jobs:
       - name: Tar Object File
         run: tar -zcvf geneve.tar.gz geneve.o
 
-      - name: Get the version
-        run: echo "TAG=`echo ${GITHUB_REF#refs/*/} | awk  -F '/' '{print $2}'`" >> $GITHUB_ENV
-
-      - name: Print TAG to check release
-        run: |
-          echo $TAG
-          echo ${{ env.TAG }}
+      - name: version
+        run: cat src/release.json | jq -r .version
+        id: version
 
       - name: Create release
         if: startsWith(github.ref, 'refs/heads/release/')
@@ -41,8 +39,8 @@ jobs:
         with:
           draft: false
           prerelease: false
-          release_name: ${{ env.TAG }}
-          tag_name: ${{ env.TAG }}
+          release_name: v${{ steps.version.outputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
