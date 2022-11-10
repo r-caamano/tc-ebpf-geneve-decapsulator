@@ -1,6 +1,6 @@
   This is a project to develop an ebpf program that 
   utilizes tc-bpf to strip the UDP Outer Header on ingress ipv4 udp flows 
-  if a geneve header is detected.
+  if a geneve header is detected and ignores every other packet.
 
   prereqs: Ubuntu 22.04 server
 
