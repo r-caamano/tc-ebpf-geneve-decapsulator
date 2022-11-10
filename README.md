@@ -38,5 +38,6 @@
            <idle>-0       [001] dNs.. 69289.977185: bpf_trace_printk: forwarding_to_tproxy_port=58997
            <idle>-0       [001] dNs.. 69289.977187: bpf_trace_printk: Assigned
 
-  
+# Important Note
+The release workflow that creates the release binary and uploads it to the release folder will only be triggered when the state of PR changes to `ready for review`.
   
